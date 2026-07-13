@@ -1,0 +1,81 @@
+# =============================================================================
+# Wazuh Indexer — OpenSearch Configuration
+# =============================================================================
+
+cluster.name: shog-wazuh-cluster
+node.name: shog-wazuh-indexer
+path.data: /var/lib/wazuh-indexer
+path.logs: /var/log/wazuh-indexer
+path.repo: /var/lib/wazuh-indexer/snapshots
+
+# Single-node configuration
+network.host: "0.0.0.0"
+node.roles: [master, data, ingest]
+discovery.type: single-node
+
+# Security plugin — initial setup uses demo certs
+# For production, replace with proper certificates
+plugins.security.ssl.transport.pemcert_filepath: demo-certificates/indexer.pem
+plugins.security.ssl.transport.pemkey_filepath: demo-certificates/indexer-key.pem
+plugins.security.ssl.transport.pemtrustedcas_filepath: demo-certificates/root-ca.pem
+plugins.security.ssl.transport.enforce_hostname_verification: false
+plugins.security.ssl.http.enabled: true
+plugins.security.ssl.http.pemcert_filepath: demo-certificates/indexer.pem
+plugins.security.ssl.http.pemkey_filepath: demo-certificates/indexer-key.pem
+plugins.security.ssl.http.pemtrustedcas_filepath: demo-certificates/root-ca.pem
+plugins.security.allow_unsafe_democertificates: true
+plugins.security.allow_default_init_securityindex: true
+plugins.security.authcz.admin_dn:
+  - "CN=admin,OU=Wazuh,O=Wazuh,L=California,C=US"
+plugins.security.check_snapshot_restore_write_privileges: true
+plugins.security.restapi.roles_enabled:
+  - "all_access"
+  - "security_rest_api_access"
+
+plugins.security.system_indices.enabled: true
+plugins.security.system_indices.indices:
+  [
+    ".opendistro-alerting-config",
+    ".opendistro-alerting-alert*",
+    ".opendistro-anomaly-results*",
+    ".opendistro-anomaly-detector*",
+    ".opendistro-anomaly-checkpoints",
+    ".opendistro-anomaly-detection-state",
+    ".opendistro-reports-*",
+    ".opendistro-notifications-*",
+    ".opendistro-notebooks",
+    ".opensearch-observability",
+    ".opendistro-asynchronous-search-response*",
+    ".replication-metadata-store",
+    ".plugins-ml-config",
+    ".plugins-ml-connector",
+    ".plugins-ml-model-group",
+    ".plugins-ml-model",
+    ".plugins-ml-task",
+    ".opendistro-alerting-sample*",
+    ".opensearch-sap-*",
+    ".opensearch-pipelines",
+    ".plugins-flow-framework-config",
+    ".plugins-flow-framework-templates",
+    ".plugins-flow-framework-state",
+    ".opensearch-knn-perf-top*",
+    ".opensearch-ccs*",
+    ".plugins-conversational*",
+    ".plugins-search-relevance*"
+  ]
+
+# Performance tuning
+plugins.security.audit.type: internal_opensearch
+plugins.security.enable_snapshot_restore_privilege: true
+plugins.security.nodes_dn:
+  - "CN=shog-wazuh-indexer,OU=Wazuh,O=Wazuh,L=California,C=US"
+
+# Caching
+plugins.security.cache.ttl_minutes: 60
+
+# --- Production hardening notes ---
+# To use proper TLS certificates instead of demo certs:
+# 1. Generate certs: docker compose exec wazuh-indexer /usr/share/wazuh-indexer/plugins/opensearch-security/tools/securityadmin.sh
+# 2. Replace cert paths above with your own PEM files
+# 3. Set allow_unsafe_democertificates: false
+# 4. See: https://documentation.wazuh.com/current/installation-guide/wazuh-indexer/step-by-step.html

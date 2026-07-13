@@ -1,0 +1,64 @@
+# =============================================================================
+# CrowdSec Acquisition Configuration
+# Defines log sources for behavioural threat detection.
+# =============================================================================
+
+# --- Docker host authentication logs ----------------------------------------
+filenames:
+  - /var/log/host/auth.log
+  - /var/log/host/secure
+labels:
+  type: syslog
+  program: sshd
+---
+
+# --- Docker host system logs ------------------------------------------------
+filenames:
+  - /var/log/host/syslog
+  - /var/log/host/messages
+labels:
+  type: syslog
+---
+
+# --- Docker container logs --------------------------------------------------
+# Reads container logs from Docker's JSON log files
+filenames:
+  - /var/lib/docker/containers/*/*.log
+type: docker
+labels:
+  type: docker
+  program: docker
+---
+
+# --- pfSense forwarded logs -------------------------------------------------
+# These arrive via rsyslog and are written to /var/log/remote/
+# The host rsyslog data is mounted at /var/log/remote in the crowdsec container
+filenames:
+  - /var/log/remote/*/filterlog.log
+labels:
+  type: pfsense
+  program: filterlog
+---
+
+# --- Suricata EVE JSON ------------------------------------------------------
+filenames:
+  - /var/log/remote/*/suricata-eve.json
+labels:
+  type: suricata
+  program: suricata
+---
+
+# --- Nginx logs (if nginx is on the host) -----------------------------------
+filenames:
+  - /var/log/host/nginx/*.log
+labels:
+  type: nginx
+  program: nginx
+---
+
+# --- Kernel logs ------------------------------------------------------------
+filenames:
+  - /var/log/host/kern.log
+labels:
+  type: kernel
+  program: kernel

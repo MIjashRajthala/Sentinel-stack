@@ -1,0 +1,131 @@
+# =============================================================================
+# Filebeat Configuration — Log Shipper for pfSense/Suricata
+# =============================================================================
+# Reads logs from rsyslog's remote log directory and ships them to
+# Wazuh Indexer for analysis and correlation.
+# =============================================================================
+
+filebeat.inputs:
+  # --- pfSense filterlog (firewall logs) ---
+  - type: log
+    enabled: true
+    paths:
+      - /var/log/remote/*/filterlog.log
+    fields:
+      log_source: pfsense
+      log_type: firewall
+    fields_under_root: true
+    tags: ["pfsense", "firewall"]
+    multiline.pattern: '^<'
+    multiline.negate: true
+    multiline.match: after
+
+  # --- Suricata EVE JSON ---
+  - type: log
+    enabled: true
+    paths:
+      - /var/log/remote/*/suricata-eve.json
+    fields:
+      log_source: suricata
+      log_type: ids
+    fields_under_root: true
+    tags: ["suricata", "ids", "eve"]
+    json.keys_under_root: true
+    json.add_error_key: true
+    json.message_key: message
+
+  # --- General remote syslog ---
+  - type: log
+    enabled: true
+    paths:
+      - /var/log/remote/*/*.log
+    exclude_files:
+      - '/var/log/remote/.*/filterlog\.log'
+      - '/var/log/remote/.*/suricata-eve\.json'
+    fields:
+      log_source: syslog
+      log_type: generic
+    fields_under_root: true
+    tags: ["syslog", "remote"]
+
+# =============================================================================
+# FILEBEAT MODULES
+# =============================================================================
+
+filebeat.config.modules:
+  path: ${path.config}/modules.d/*.yml
+  reload.enabled: false
+
+# =============================================================================
+# PROCESSORS
+# =============================================================================
+
+processors:
+  - add_host_metadata:
+      when.not.contains.tags: forwarded
+  - add_cloud_metadata: ~
+  - add_docker_metadata: ~
+  - decode_json_fields:
+      fields: ["message"]
+      target: ""
+      overwrite_keys: true
+      when:
+        contains:
+          tags: "eve"
+
+# =============================================================================
+# OUTPUT — Wazuh Indexer
+# =============================================================================
+
+output.elasticsearch:
+  hosts: ["https://wazuh-indexer:9200"]
+  protocol: https
+  ssl.verification_mode: none
+  username: admin
+  password: ${WAZUH_INDEXER_PASSWORD}
+  index: "filebeat-shog-%{+yyyy.MM.dd}"
+  indices:
+    - index: "wazuh-alerts-pfsense-%{+yyyy.MM.dd}"
+      when.contains:
+        tags: "pfsense"
+    - index: "wazuh-alerts-suricata-%{+yyyy.MM.dd}"
+      when.contains:
+        tags: "suricata"
+
+# =============================================================================
+# TEMPLATE
+# =============================================================================
+
+setup.template.enabled: true
+setup.template.name: "filebeat-shog"
+setup.template.pattern: "filebeat-shog-*"
+setup.template.overwrite: false
+setup.ilm.enabled: false
+
+# =============================================================================
+# LOGGING
+# =============================================================================
+
+logging.level: warning
+logging.to_files: true
+logging.files:
+  path: /usr/share/filebeat/logs
+  name: filebeat
+  keepfiles: 7
+  permissions: 0640
+
+# =============================================================================
+# QUEUE AND MEMORY
+# =============================================================================
+
+queue.mem:
+  events: 4096
+  flush.min_events: 512
+  flush.timeout: 5s
+
+# =============================================================================
+# PATHS
+# =============================================================================
+
+path.data: /usr/share/filebeat/data
+path.logs: /usr/share/filebeat/logs

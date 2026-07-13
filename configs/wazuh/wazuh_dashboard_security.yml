@@ -1,0 +1,35 @@
+# =============================================================================
+# Wazuh Dashboard — Wazuh API Connection Configuration
+# =============================================================================
+# Tells the Wazuh Dashboard plugin how to connect to the Wazuh Manager API.
+# =============================================================================
+
+# Wazuh API endpoint (resolved via Docker network)
+url: https://wazuh-manager
+port: 55000
+username: wazuh-wui
+# Password is injected via environment variable at container startup
+# The Wazuh Dashboard plugin reads API credentials from environment
+# Set WAZUH_API_PASSWORD in your .env file
+password: changeme
+run_from_kibana: shog-wazuh-dashboard
+
+# In production with valid certificates, set this to true
+allow_no_certificate: true
+
+# API polling interval (seconds)
+delay: 0
+
+# Pattern for Wazuh indices
+pattern: wazuh-alerts-*
+
+# IP selector and index pattern selector
+ip.selector: true
+ip.ignore: ["127.0.0.1"]
+xpack.rbac.enabled: true
+
+# API timeout (ms)
+timeout: 20000
+
+# SSL verification (disabled for demo certs — enable in production)
+ssl_verify: false
