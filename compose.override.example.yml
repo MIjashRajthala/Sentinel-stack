@@ -1,0 +1,112 @@
+# =============================================================================
+# Docker Compose Override Example
+# =============================================================================
+# Copy this file to compose.override.yml and customize for your environment.
+# Docker Compose automatically reads compose.override.yml if present.
+# =============================================================================
+#
+# Examples:
+# - Add host-specific volume mounts
+# - Override environment variables
+# - Add extra networks
+# - Change resource limits
+# - Add reverse proxy labels
+# =============================================================================
+
+services:
+  # ==========================================================================
+  # EXAMPLE: Add Traefik reverse proxy labels for external access
+  # ==========================================================================
+  # portainer:
+  #   labels:
+  #     - "traefik.enable=true"
+  #     - "traefik.http.routers.portainer.rule=Host(`portainer.yourdomain.com`)"
+  #     - "traefik.http.routers.portainer.tls=true"
+  #     - "traefik.http.routers.portainer.tls.certresolver=letsencrypt"
+  #     - "traefik.http.services.portainer.loadbalancer.server.port=9443"
+  #     - "traefik.http.services.portainer.loadbalancer.server.scheme=https"
+  #     - "traefik.http.routers.portainer.middlewares=authelia@docker"
+  #   networks:
+  #     - traefik-public
+
+  # wazuh-dashboard:
+  #   labels:
+  #     - "traefik.enable=true"
+  #     - "traefik.http.routers.wazuh.rule=Host(`siem.yourdomain.com`)"
+  #     - "traefik.http.routers.wazuh.tls=true"
+  #     - "traefik.http.routers.wazuh.tls.certresolver=letsencrypt"
+  #     - "traefik.http.services.wazuh.loadbalancer.server.port=5601"
+  #     - "traefik.http.services.wazuh.loadbalancer.server.scheme=https"
+  #     - "traefik.http.routers.wazuh.middlewares=authelia@docker"
+  #   networks:
+  #     - traefik-public
+
+  # ==========================================================================
+  # EXAMPLE: Increase resource limits for Wazuh Indexer
+  # ==========================================================================
+  # wazuh-indexer:
+  #   deploy:
+  #     resources:
+  #       limits:
+  #         memory: 4G
+  #         cpus: '2.0'
+  #       reservations:
+  #         memory: 2G
+  #         cpus: '1.0'
+
+  # ==========================================================================
+  # EXAMPLE: Mount additional host directories for Wazuh agent monitoring
+  # ==========================================================================
+  # wazuh-agent:
+  #   volumes:
+  #     - /custom/logs:/custom/logs:ro
+  #     - /opt/myapp/logs:/opt/myapp/logs:ro
+
+  # ==========================================================================
+  # EXAMPLE: Add a VPN container for secure remote access
+  # ==========================================================================
+  # wireguard:
+  #   image: linuxserver/wireguard:1.0.20210914-legacy
+  #   container_name: shog-wireguard
+  #   restart: unless-stopped
+  #   cap_add:
+  #     - NET_ADMIN
+  #     - SYS_MODULE
+  #   sysctls:
+  #     - net.ipv4.conf.all.src_valid_mark=1
+  #   volumes:
+  #     - ./configs/wireguard:/config
+  #   ports:
+  #     - "51820:51820/udp"
+  #   networks:
+  #     - management
+
+  # ==========================================================================
+  # EXAMPLE: Add Authelia for SSO on admin interfaces
+  # ==========================================================================
+  # authelia:
+  #   image: authelia/authelia:4.38
+  #   container_name: shog-authelia
+  #   restart: unless-stopped
+  #   volumes:
+  #     - ./configs/authelia:/config
+  #   ports:
+  #     - "9091:9091"
+  #   environment:
+  #     TZ: ${TZ:-UTC}
+  #   networks:
+  #     - management
+  #     - monitoring
+
+  # ==========================================================================
+  # EXAMPLE: Custom network for reverse proxy
+  # ==========================================================================
+  # traefik-public:
+  #   external: true
+
+# =============================================================================
+# EXAMPLE: Add an external network
+# =============================================================================
+# networks:
+#   traefik-public:
+#     external: true

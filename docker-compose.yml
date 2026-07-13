@@ -1,0 +1,895 @@
+# =============================================================================
+# Secure Home-Office Gateway (SHOG) - Docker Compose Stack
+# Version: 1.0.0
+# =============================================================================
+# This stack deploys behind a pfSense edge firewall.
+# DO NOT run pfSense inside Docker — it is a separate bare-metal/VM appliance.
+# =============================================================================
+
+services:
+  # ===========================================================================
+  # UNBOUND - Local Recursive DNS Resolver
+  # ===========================================================================
+  unbound:
+    container_name: shog-unbound
+    image: mvance/unbound:1.19.0
+    restart: unless-stopped
+    networks:
+      security:
+        ipv4_address: ${UNBOUND_IP:-172.28.1.3}
+    ports:
+      - "127.0.0.1:5335:53/tcp"
+      - "127.0.0.1:5335:53/udp"
+    volumes:
+      - ./configs/unbound/unbound.conf:/opt/unbound/etc/unbound/unbound.conf:ro
+      - unbound-data:/opt/unbound/etc/unbound/var
+    cap_drop:
+      - ALL
+    cap_add:
+      - NET_BIND_SERVICE
+      - SETGID
+      - SETUID
+    security_opt:
+      - no-new-privileges:true
+    healthcheck:
+      test: ["CMD-SHELL", "dig @127.0.0.1 -p 53 cloudflare.com || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # ===========================================================================
+  # PI-HOLE - DNS Filtering & Ad Blocking
+  # ===========================================================================
+  pihole:
+    container_name: shog-pihole
+    image: pihole/pihole:2024.02.2
+    restart: unless-stopped
+    networks:
+      security:
+        ipv4_address: ${PIHOLE_IP:-172.28.1.2}
+      monitoring:
+        ipv4_address: ${PIHOLE_MONITORING_IP:-172.29.1.2}
+    ports:
+      - "${PIHOLE_WEB_IP:-127.0.0.1}:8080:80/tcp"
+      - "53:53/tcp"
+      - "53:53/udp"
+      - "67:67/udp"
+    environment:
+      TZ: ${TZ:-UTC}
+      WEBPASSWORD: ${PIHOLE_WEBPASSWORD}
+      PIHOLE_DNS_: "${UNBOUND_IP:-172.28.1.3}#53"
+      DNSSEC: "true"
+      DNSMASQ_LISTENING: "local"
+      FTLCONF_REPLY_ADDR4: ${PIHOLE_IP:-172.28.1.2}
+      FTLCONF_MAXDBDAYS: "90"
+    volumes:
+      - pihole-etc:/etc/pihole
+      - pihole-dnsmasq:/etc/dnsmasq.d
+    cap_drop:
+      - ALL
+    cap_add:
+      - NET_BIND_SERVICE
+      - NET_RAW
+      - SETGID
+      - SETUID
+      - CHOWN
+    security_opt:
+      - no-new-privileges:true
+    healthcheck:
+      test: ["CMD-SHELL", "dig @127.0.0.1 -p 53 +short cloudflare.com || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    depends_on:
+      unbound:
+        condition: service_healthy
+
+  # ===========================================================================
+  # RSYSLOG - Central Syslog Receiver for pfSense/Suricata
+  # ===========================================================================
+  rsyslog:
+    container_name: shog-rsyslog
+    image: rsyslog/syslog_appliance_alpine:8.2310.0
+    restart: unless-stopped
+    networks:
+      security:
+        ipv4_address: ${RSYSLOG_IP:-172.28.1.4}
+      monitoring:
+        ipv4_address: ${RSYSLOG_MONITORING_IP:-172.29.1.4}
+    ports:
+      - "514:514/udp"
+      - "514:514/tcp"
+    environment:
+      TZ: ${TZ:-UTC}
+    volumes:
+      - ./configs/rsyslog/rsyslog.conf:/etc/rsyslog.conf:ro
+      - rsyslog-data:/var/log/remote
+      - rsyslog-spool:/var/spool/rsyslog
+    cap_drop:
+      - ALL
+    cap_add:
+      - NET_BIND_SERVICE
+      - SETGID
+      - SETUID
+    security_opt:
+      - no-new-privileges:true
+    healthcheck:
+      test: ["CMD-SHELL", "pgrep rsyslogd > /dev/null || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # ===========================================================================
+  # CROWDSEC - Behavioural Threat Detection
+  # ===========================================================================
+  crowdsec:
+    container_name: shog-crowdsec
+    image: crowdsecurity/crowdsec:v1.6.0
+    restart: unless-stopped
+    networks:
+      security:
+        ipv4_address: ${CROWDSEC_IP:-172.28.1.5}
+      monitoring:
+        ipv4_address: ${CROWDSEC_MONITORING_IP:-172.29.1.5}
+    environment:
+      TZ: ${TZ:-UTC}
+      COLLECTIONS: "crowdsecurity/linux crowdsecurity/traefik crowdsecurity/sshd crowdsecurity/pfsense"
+      PARSERS: "crowdsecurity/syslog-logs crowdsecurity/dateparse-enrich"
+      BOUNCERS: ""
+      CUSTOM_HOSTNAME: ${HOSTNAME:-shog-docker-host}
+    volumes:
+      - crowdsec-config:/etc/crowdsec
+      - crowdsec-data:/var/lib/crowdsec/data
+      - /var/log:/var/log/host:ro
+      - /var/lib/docker/containers:/var/lib/docker/containers:ro
+      - ./configs/crowdsec/acquis.yaml:/etc/crowdsec/acquis.yaml:ro
+    cap_drop:
+      - ALL
+    cap_add:
+      - NET_BIND_SERVICE
+      - SETGID
+      - SETUID
+    security_opt:
+      - no-new-privileges:true
+    healthcheck:
+      test: ["CMD-SHELL", "cscli metrics > /dev/null 2>&1 || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    depends_on:
+      - rsyslog
+
+  # ===========================================================================
+  # CROWDSEC FIREWALL BOUNCER
+  # ===========================================================================
+  crowdsec-bouncer:
+    container_name: shog-crowdsec-bouncer
+    image: crowdsecurity/iptables-bouncer:v0.0.28
+    restart: unless-stopped
+    network_mode: host
+    environment:
+      API_KEY: ${CROWDSEC_BOUNCER_KEY}
+      API_URL: "http://${CROWDSEC_IP:-172.28.1.5}:8080"
+      IPTABLES_CHAIN: "DOCKER-USER"
+      MODE: "iptables"
+      LOG_LEVEL: "info"
+      LOG_MODE: "file"
+      LOG_DIR: "/var/log/crowdsec/"
+      LOG_MAX_SIZE: "100M"
+      LOG_MAX_AGE: "7"
+      LOG_MAX_BACKUPS: "3"
+      BLOCK_IPV6: "false"
+    volumes:
+      - crowdsec-bouncer-data:/var/lib/crowdsec
+      - crowdsec-bouncer-logs:/var/log/crowdsec
+    cap_add:
+      - NET_ADMIN
+      - NET_RAW
+    security_opt:
+      - no-new-privileges:true
+    depends_on:
+      crowdsec:
+        condition: service_healthy
+    profiles:
+      - host-bouncer
+
+  # ===========================================================================
+  # WAZUH INDEXER - Search & Analytics
+  # ===========================================================================
+  wazuh-indexer:
+    container_name: shog-wazuh-indexer
+    image: wazuh/wazuh-indexer:4.7.2
+    restart: unless-stopped
+    networks:
+      security:
+        ipv4_address: ${WAZUH_INDEXER_IP:-172.28.1.10}
+    environment:
+      - "OPENSEARCH_JAVA_OPTS=-Xms${WAZUH_INDEXER_HEAP:-1g} -Xmx${WAZUH_INDEXER_HEAP:-1g}"
+      - "bootstrap.memory_lock=true"
+      - "OPENSEARCH_PATH_CONF=/usr/share/wazuh-indexer/config"
+      - "INDEXER_PASSWORD=${WAZUH_INDEXER_PASSWORD}"
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
+      nofile:
+        soft: 65536
+        hard: 65536
+    volumes:
+      - wazuh-indexer-data:/var/lib/wazuh-indexer
+      - ./configs/wazuh/wazuh_indexer.yml:/usr/share/wazuh-indexer/config/opensearch.yml:ro
+      - ./configs/wazuh/indexer_security_config.yml:/usr/share/wazuh-indexer/plugins/opensearch-security/securityconfig/config.yml:ro
+    cap_drop:
+      - ALL
+    cap_add:
+      - CHOWN
+      - SETGID
+      - SETUID
+    security_opt:
+      - no-new-privileges:true
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "curl -k -s -u admin:${WAZUH_INDEXER_PASSWORD} https://localhost:9200/_cluster/health | grep -q 'green\\|yellow' || exit 1"
+        ]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 120s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # ===========================================================================
+  # WAZUH MANAGER - SIEM Engine
+  # ===========================================================================
+  wazuh-manager:
+    container_name: shog-wazuh-manager
+    image: wazuh/wazuh-manager:4.7.2
+    restart: unless-stopped
+    networks:
+      security:
+        ipv4_address: ${WAZUH_MANAGER_IP:-172.28.1.11}
+      monitoring:
+        ipv4_address: ${WAZUH_MANAGER_MONITORING_IP:-172.29.1.11}
+    environment:
+      - "INDEXER_URL=https://wazuh-indexer:9200"
+      - "INDEXER_USERNAME=admin"
+      - "INDEXER_PASSWORD=${WAZUH_INDEXER_PASSWORD}"
+      - "FILEBEAT_SSL_VERIFICATION_MODE=none"
+      - "API_USERNAME=wazuh-wui"
+      - "API_PASSWORD=${WAZUH_API_PASSWORD}"
+    volumes:
+      - wazuh-manager-var-ossec:/var/ossec
+      - wazuh-manager-etc:/wazuh-config-mount/etc
+    cap_drop:
+      - ALL
+    cap_add:
+      - CHOWN
+      - SETGID
+      - SETUID
+      - SYS_PTRACE
+    security_opt:
+      - no-new-privileges:true
+    healthcheck:
+      test: ["CMD-SHELL", "/var/ossec/bin/wazuh-control status | grep -q 'is running' || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 120s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    depends_on:
+      wazuh-indexer:
+        condition: service_healthy
+
+  # ===========================================================================
+  # WAZUH DASHBOARD - Web UI
+  # ===========================================================================
+  wazuh-dashboard:
+    container_name: shog-wazuh-dashboard
+    image: wazuh/wazuh-dashboard:4.7.2
+    restart: unless-stopped
+    networks:
+      security:
+        ipv4_address: ${WAZUH_DASHBOARD_IP:-172.28.1.12}
+      monitoring:
+        ipv4_address: ${WAZUH_DASHBOARD_MONITORING_IP:-172.29.1.12}
+    ports:
+      - "${MANAGEMENT_IP:-127.0.0.1}:5601:5601"
+    environment:
+      - "INDEXER_USERNAME=admin"
+      - "INDEXER_PASSWORD=${WAZUH_INDEXER_PASSWORD}"
+      - "WAZUH_API_URL=https://wazuh-manager"
+      - "API_USERNAME=wazuh-wui"
+      - "API_PASSWORD=${WAZUH_API_PASSWORD}"
+      - "TZ=${TZ:-UTC}"
+    volumes:
+      - ./configs/wazuh/wazuh_dashboard.yml:/usr/share/wazuh-dashboard/config/opensearch_dashboards.yml:ro
+      - ./configs/wazuh/wazuh_dashboard_security.yml:/usr/share/wazuh-dashboard/data/wazuh/config/wazuh.yml:ro
+      - wazuh-dashboard-data:/usr/share/wazuh-dashboard/data
+    cap_drop:
+      - ALL
+    cap_add:
+      - CHOWN
+      - SETGID
+      - SETUID
+    security_opt:
+      - no-new-privileges:true
+    healthcheck:
+      test: ["CMD-SHELL", "curl -k -s https://localhost:5601/app/wazuh | grep -q 'Wazuh' || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 180s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    depends_on:
+      wazuh-manager:
+        condition: service_healthy
+      wazuh-indexer:
+        condition: service_healthy
+
+  # ===========================================================================
+  # WAZUH AGENT - Docker Host Telemetry
+  # ===========================================================================
+  wazuh-agent:
+    container_name: shog-wazuh-agent
+    image: wazuh/wazuh-agent:4.7.2
+    restart: unless-stopped
+    networks:
+      security:
+        ipv4_address: ${WAZUH_AGENT_IP:-172.28.1.13}
+    environment:
+      - "WAZUH_MANAGER_HOST=wazuh-manager"
+      - "WAZUH_MANAGER_PORT=1514"
+      - "WAZUH_AGENT_GROUP=default"
+      - "WAZUH_AGENT_NAME=shog-docker-host"
+      - "WAZUH_REGISTRATION_PASSWORD=${WAZUH_API_PASSWORD}"
+    volumes:
+      - wazuh-agent-var-ossec:/var/ossec
+      - /:/host:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    cap_add:
+      - AUDIT_CONTROL
+      - AUDIT_READ
+    security_opt:
+      - no-new-privileges:true
+    depends_on:
+      wazuh-manager:
+        condition: service_healthy
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # ===========================================================================
+  # PORTAINER CE - Container Management UI
+  # ===========================================================================
+  portainer:
+    container_name: shog-portainer
+    image: portainer/portainer-ce:2.19.4
+    restart: unless-stopped
+    networks:
+      management:
+        ipv4_address: ${PORTAINER_IP:-172.27.1.2}
+      monitoring:
+        ipv4_address: ${PORTAINER_MONITORING_IP:-172.29.1.3}
+    ports:
+      - "${MANAGEMENT_IP:-127.0.0.1}:9443:9443"
+      - "${MANAGEMENT_IP:-127.0.0.1}:9000:9000"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - portainer-data:/data
+    environment:
+      TZ: ${TZ:-UTC}
+    cap_drop:
+      - ALL
+    cap_add:
+      - SETGID
+      - SETUID
+    security_opt:
+      - no-new-privileges:true
+    healthcheck:
+      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider https://localhost:9443/api/status 2>/dev/null || wget --no-verbose --tries=1 --spider http://localhost:9000/api/status 2>/dev/null"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    # SECURITY NOTE: Docker socket exposure carries risk. Portainer uses it to
+    # manage containers. Restrict MANAGEMENT_IP to a trusted admin subnet.
+    # Consider a Docker socket proxy (tecnativa/docker-socket-proxy) for
+    # additional isolation in high-security environments.
+
+  # ===========================================================================
+  # UPTIME KUMA - Availability Monitoring
+  # ===========================================================================
+  uptime-kuma:
+    container_name: shog-uptime-kuma
+    image: louislam/uptime-kuma:1.23.11
+    restart: unless-stopped
+    networks:
+      management:
+        ipv4_address: ${UPTIME_KUMA_IP:-172.27.1.3}
+      monitoring:
+        ipv4_address: ${UPTIME_KUMA_MONITORING_IP:-172.29.1.6}
+      security:
+        ipv4_address: ${UPTIME_KUMA_SECURITY_IP:-172.28.1.14}
+    ports:
+      - "${MANAGEMENT_IP:-127.0.0.1}:3001:3001"
+    volumes:
+      - uptime-kuma-data:/app/data
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    environment:
+      TZ: ${TZ:-UTC}
+      UPTIME_KUMA_DISABLE_FRAME_SAMEORIGIN: "1"
+    security_opt:
+      - no-new-privileges:true
+    healthcheck:
+      test: ["CMD", "node", "extra/healthcheck.js"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # ===========================================================================
+  # FILEBEAT - Log Shipper for pfSense/Suricata to Wazuh
+  # ===========================================================================
+  filebeat:
+    container_name: shog-filebeat
+    image: docker.elastic.co/beats/filebeat-oss:8.11.4
+    restart: unless-stopped
+    networks:
+      security:
+        ipv4_address: ${FILEBEAT_IP:-172.28.1.15}
+    environment:
+      TZ: ${TZ:-UTC}
+    volumes:
+      - ./configs/wazuh/filebeat.yml:/usr/share/filebeat/filebeat.yml:ro
+      - rsyslog-data:/var/log/remote:ro
+      - filebeat-data:/usr/share/filebeat/data
+      - filebeat-logs:/usr/share/filebeat/logs
+    cap_drop:
+      - ALL
+    cap_add:
+      - SETGID
+      - SETUID
+    security_opt:
+      - no-new-privileges:true
+    depends_on:
+      rsyslog:
+        condition: service_started
+      wazuh-indexer:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "filebeat test output | grep -q 'ok' || exit 1"]
+      interval: 60s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # ===========================================================================
+  # ALERTING BRIDGE - Optional Webhook/Email Notifications
+  # ===========================================================================
+  # Disabled by default. Enable with: docker compose --profile alerting up -d
+  alerting:
+    container_name: shog-alerting
+    image: ghcr.io/containrrr/shoutrrr:0.8.0
+    restart: unless-stopped
+    networks:
+      monitoring:
+        ipv4_address: ${ALERTING_IP:-172.29.1.7}
+      security:
+        ipv4_address: ${ALERTING_SECURITY_IP:-172.28.1.16}
+    environment:
+      TZ: ${TZ:-UTC}
+      SHOUTRRR_URL: ${ALERTING_WEBHOOK_URL}
+      ALERT_FROM: ${ALERTING_FROM:-shog-alert@localhost}
+      ALERT_TO: ${ALERTING_TO}
+      SMTP_HOST: ${ALERTING_SMTP_HOST}
+      SMTP_PORT: ${ALERTING_SMTP_PORT:-587}
+      SMTP_USER: ${ALERTING_SMTP_USER}
+      SMTP_PASS: ${ALERTING_SMTP_PASS}
+    volumes:
+      - alerting-data:/data
+    cap_drop:
+      - ALL
+    cap_add:
+      - SETGID
+      - SETUID
+    security_opt:
+      - no-new-privileges:true
+    profiles:
+      - alerting
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # ===========================================================================
+  # OPENCTI - Optional Threat Intelligence Platform (Resource Heavy)
+  # ===========================================================================
+  # Disabled by default. Enable with: docker compose --profile opencti up -d
+  # Requires minimum 8 GB additional RAM. Not recommended for <16 GB total.
+  opencti-platform:
+    container_name: shog-opencti
+    image: opencti/platform:6.0.0
+    restart: unless-stopped
+    networks:
+      security:
+        ipv4_address: ${OPENCTI_IP:-172.28.1.20}
+      monitoring:
+        ipv4_address: ${OPENCTI_MONITORING_IP:-172.29.1.20}
+    ports:
+      - "${MANAGEMENT_IP:-127.0.0.1}:8088:8080"
+    environment:
+      - "APP__PORT=8080"
+      - "APP__BASE_URL=${OPENCTI_BASE_URL}"
+      - "APP__ADMIN__EMAIL=${OPENCTI_ADMIN_EMAIL}"
+      - "APP__ADMIN__PASSWORD=${OPENCTI_ADMIN_PASSWORD}"
+      - "APP__ADMIN__TOKEN=${OPENCTI_ADMIN_TOKEN}"
+      - "REDIS__HOSTNAME=opencti-redis"
+      - "REDIS__PORT=6379"
+      - "ELASTICSEARCH__URL=http://opencti-elasticsearch:9200"
+      - "ELASTICSEARCH__USERNAME=elastic"
+      - "ELASTICSEARCH__PASSWORD=${OPENCTI_ES_PASSWORD}"
+      - "MINIO__ENDPOINT=opencti-minio"
+      - "MINIO__PORT=9000"
+      - "MINIO__USE_SSL=false"
+      - "MINIO__ACCESS_KEY=${OPENCTI_MINIO_ACCESS_KEY}"
+      - "MINIO__SECRET_KEY=${OPENCTI_MINIO_SECRET_KEY}"
+      - "RABBITMQ__HOSTNAME=opencti-rabbitmq"
+      - "RABBITMQ__PORT=5672"
+      - "RABBITMQ__USERNAME=${OPENCTI_RABBITMQ_USER}"
+      - "RABBITMQ__PASSWORD=${OPENCTI_RABBITMQ_PASS}"
+      - "SMTP__HOSTNAME=${ALERTING_SMTP_HOST}"
+      - "SMTP__PORT=${ALERTING_SMTP_PORT:-587}"
+      - "SMTP__USERNAME=${ALERTING_SMTP_USER}"
+      - "SMTP__PASSWORD=${ALERTING_SMTP_PASS}"
+      - "PROVIDERS__LOCAL__STRATEGY=LocalStrategy"
+    volumes:
+      - opencti-data:/opt/opencti/data
+    cap_drop:
+      - ALL
+    cap_add:
+      - SETGID
+      - SETUID
+    security_opt:
+      - no-new-privileges:true
+    profiles:
+      - opencti
+    depends_on:
+      opencti-redis:
+        condition: service_healthy
+      opencti-elasticsearch:
+        condition: service_healthy
+      opencti-minio:
+        condition: service_healthy
+      opencti-rabbitmq:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8080/graphql"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 120s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  opencti-redis:
+    container_name: shog-opencti-redis
+    image: redis:7.2.4-alpine
+    restart: unless-stopped
+    networks:
+      security:
+        ipv4_address: ${OPENCTI_REDIS_IP:-172.28.1.21}
+    volumes:
+      - opencti-redis-data:/data
+    cap_drop:
+      - ALL
+    cap_add:
+      - SETGID
+      - SETUID
+    security_opt:
+      - no-new-privileges:true
+    profiles:
+      - opencti
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  opencti-elasticsearch:
+    container_name: shog-opencti-elasticsearch
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.11.4
+    restart: unless-stopped
+    networks:
+      security:
+        ipv4_address: ${OPENCTI_ES_IP:-172.28.1.22}
+    environment:
+      - "discovery.type=single-node"
+      - "xpack.ml.enabled=false"
+      - "ES_JAVA_OPTS=-Xms${OPENCTI_ES_HEAP:-2g} -Xmx${OPENCTI_ES_HEAP:-2g}"
+      - "ELASTIC_PASSWORD=${OPENCTI_ES_PASSWORD}"
+    volumes:
+      - opencti-es-data:/usr/share/elasticsearch/data
+    cap_drop:
+      - ALL
+    cap_add:
+      - SETGID
+      - SETUID
+    security_opt:
+      - no-new-privileges:true
+    profiles:
+      - opencti
+    healthcheck:
+      test: ["CMD-SHELL", "curl -s -u elastic:${OPENCTI_ES_PASSWORD} http://localhost:9200/_cluster/health | grep -q 'green\\|yellow' || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 120s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  opencti-minio:
+    container_name: shog-opencti-minio
+    image: minio/minio:RELEASE.2024-01-31T20-20-33Z
+    restart: unless-stopped
+    networks:
+      security:
+        ipv4_address: ${OPENCTI_MINIO_IP:-172.28.1.23}
+    environment:
+      MINIO_ROOT_USER: ${OPENCTI_MINIO_ACCESS_KEY}
+      MINIO_ROOT_PASSWORD: ${OPENCTI_MINIO_SECRET_KEY}
+    volumes:
+      - opencti-minio-data:/data
+    command: server /data
+    cap_drop:
+      - ALL
+    cap_add:
+      - SETGID
+      - SETUID
+    security_opt:
+      - no-new-privileges:true
+    profiles:
+      - opencti
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  opencti-rabbitmq:
+    container_name: shog-opencti-rabbitmq
+    image: rabbitmq:3.12.13-management-alpine
+    restart: unless-stopped
+    networks:
+      security:
+        ipv4_address: ${OPENCTI_RABBITMQ_IP:-172.28.1.24}
+    environment:
+      RABBITMQ_DEFAULT_USER: ${OPENCTI_RABBITMQ_USER}
+      RABBITMQ_DEFAULT_PASS: ${OPENCTI_RABBITMQ_PASS}
+    volumes:
+      - opencti-rabbitmq-data:/var/lib/rabbitmq
+    cap_drop:
+      - ALL
+    cap_add:
+      - SETGID
+      - SETUID
+    security_opt:
+      - no-new-privileges:true
+    profiles:
+      - opencti
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "status"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # ===========================================================================
+  # OPENCTI CONNECTORS - Threat Intel Feeds (Optional)
+  # ===========================================================================
+  opencti-connector-mitre:
+    container_name: shog-opencti-connector-mitre
+    image: opencti/connector-mitre:6.0.0
+    restart: unless-stopped
+    networks:
+      security:
+        ipv4_address: ${OPENCTI_CONNECTOR_MITRE_IP:-172.28.1.25}
+    environment:
+      - "OPENCTI_URL=http://opencti-platform:8080"
+      - "OPENCTI_TOKEN=${OPENCTI_ADMIN_TOKEN}"
+      - "CONNECTOR_ID=${OPENCTI_CONNECTOR_MITRE_ID}"
+      - "CONNECTOR_NAME=MITRE Datasets"
+      - "CONNECTOR_SCOPE=marking-definition,identity,attack-pattern,course-of-action,intrusion-set,campaign,malware,tool,report,vulnerability,indicator"
+      - "CONNECTOR_LOG_LEVEL=info"
+      - "MITRE_INTERVAL=7"
+    profiles:
+      - opencti
+    depends_on:
+      opencti-platform:
+        condition: service_healthy
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+# =============================================================================
+# NETWORKS
+# =============================================================================
+networks:
+  management:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: ${MGMT_SUBNET:-172.27.1.0/24}
+    internal: false
+    driver_opts:
+      com.docker.network.bridge.name: br-shog-mgmt
+
+  security:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: ${SEC_SUBNET:-172.28.1.0/24}
+    internal: false
+    driver_opts:
+      com.docker.network.bridge.name: br-shog-sec
+
+  monitoring:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: ${MON_SUBNET:-172.29.1.0/24}
+    internal: true
+    driver_opts:
+      com.docker.network.bridge.name: br-shog-mon
+
+# =============================================================================
+# VOLUMES - All stateful data persisted as named volumes
+# =============================================================================
+volumes:
+  # Unbound
+  unbound-data:
+    driver: local
+
+  # Pi-hole
+  pihole-etc:
+    driver: local
+  pihole-dnsmasq:
+    driver: local
+
+  # Rsyslog
+  rsyslog-data:
+    driver: local
+  rsyslog-spool:
+    driver: local
+
+  # CrowdSec
+  crowdsec-config:
+    driver: local
+  crowdsec-data:
+    driver: local
+  crowdsec-bouncer-data:
+    driver: local
+  crowdsec-bouncer-logs:
+    driver: local
+
+  # Wazuh
+  wazuh-indexer-data:
+    driver: local
+  wazuh-manager-var-ossec:
+    driver: local
+  wazuh-manager-etc:
+    driver: local
+  wazuh-dashboard-data:
+    driver: local
+  wazuh-agent-var-ossec:
+    driver: local
+
+  # Filebeat
+  filebeat-data:
+    driver: local
+  filebeat-logs:
+    driver: local
+
+  # Portainer
+  portainer-data:
+    driver: local
+
+  # Uptime Kuma
+  uptime-kuma-data:
+    driver: local
+
+  # Alerting
+  alerting-data:
+    driver: local
+
+  # OpenCTI
+  opencti-data:
+    driver: local
+  opencti-redis-data:
+    driver: local
+  opencti-es-data:
+    driver: local
+  opencti-minio-data:
+    driver: local
+  opencti-rabbitmq-data:
+    driver: local
