@@ -41,7 +41,9 @@ log_info "Backed up existing .env to .env.bak.$BACKUP_SUFFIX"
 # Usage: generate_secret <length>
 generate_secret() {
     local length="${1:-32}"
-    openssl rand -base64 "${length}" | tr -dc 'a-zA-Z0-9' | head -c "${length}"
+    local secret
+    secret=$(openssl rand -hex "$(((length + 1) / 2))")
+    printf '%s' "${secret:0:length}"
 }
 
 # Helper: generate UUID v4 style string
@@ -66,7 +68,9 @@ set_env_var() {
         local current_value
         current_value=$(grep "^${var_name}=" "$ENV_FILE" | cut -d= -f2-)
         if [[ -z "$current_value" ]] || [[ "${FORCE_REGEN:-false}" == "true" ]]; then
-            sed -i "s|^${var_name}=.*|${var_name}=${escaped_value}|" "$ENV_FILE"
+            # The explicit backup suffix works with both GNU and BSD/macOS sed.
+            sed -i.bak "s|^${var_name}=.*|${var_name}=${escaped_value}|" "$ENV_FILE"
+            rm -f "$ENV_FILE.bak"
             log_ok "Generated ${var_name}"
         else
             log_info "${var_name} already set - skipping (use FORCE_REGEN=true to overwrite)"
