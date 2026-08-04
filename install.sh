@@ -52,6 +52,13 @@ while [[ $# -gt 0 ]]; do
                 log_error "--profile requires a profile name"
                 exit 1
             fi
+            case "$1" in
+                alerting|opencti|host-bouncer) ;;
+                *)
+                    log_error "Unsupported profile: $1 (expected: alerting, opencti, or host-bouncer)"
+                    exit 1
+                    ;;
+            esac
             COMPOSE_PROFILES+=("$1")
             shift
             ;;
@@ -198,12 +205,12 @@ log_section "Pulling Container Images"
 cd "$SCRIPT_DIR"
 
 # Build compose profile arguments
-PROFILE_ARGS=""
+PROFILE_ARGS=()
 for profile in "${COMPOSE_PROFILES[@]}"; do
-    PROFILE_ARGS="$PROFILE_ARGS --profile $profile"
+    PROFILE_ARGS+=(--profile "$profile")
 done
 
-docker compose $PROFILE_ARGS pull
+docker compose "${PROFILE_ARGS[@]}" pull
 log_ok "All images pulled"
 
 # ============================================================================
@@ -212,7 +219,7 @@ log_ok "All images pulled"
 log_section "Deploying Stack"
 
 log_info "Starting core services (this may take several minutes)..."
-docker compose $PROFILE_ARGS up -d --remove-orphans
+docker compose "${PROFILE_ARGS[@]}" up -d --remove-orphans
 
 # ============================================================================
 # 9. WAIT FOR HEALTH CHECKS
@@ -224,12 +231,10 @@ MAX_WAIT=300  # 5 minutes
 WAITED=0
 
 while [[ $WAITED -lt $MAX_WAIT ]]; do
-    UNHEALTHY=$(docker compose ps --format json 2>/dev/null | \
-        grep -c '"Health":"unhealthy"' || echo 0)
-    STARTING=$(docker compose ps --format json 2>/dev/null | \
-        grep -c '"Health":"starting"' || echo 0)
-    RUNNING=$(docker compose ps --format json 2>/dev/null | \
-        grep -c '"State":"running"' || echo 0)
+    COMPOSE_STATUS=$(docker compose "${PROFILE_ARGS[@]}" ps --format json 2>/dev/null || true)
+    UNHEALTHY=$(grep -c '"Health":"unhealthy"' <<< "$COMPOSE_STATUS" || true)
+    STARTING=$(grep -c '"Health":"starting"' <<< "$COMPOSE_STATUS" || true)
+    RUNNING=$(grep -c '"State":"running"' <<< "$COMPOSE_STATUS" || true)
 
     if [[ "$UNHEALTHY" -eq 0 && "$STARTING" -eq 0 && "$RUNNING" -gt 0 ]]; then
         log_ok "All services are healthy"
@@ -255,7 +260,8 @@ log_section "Post-Deployment"
 sleep 10
 
 # Get management IP from .env
-MGMT_IP=$(grep "^MANAGEMENT_IP=" "$ENV_FILE" | cut -d= -f2 | tr -d '"')
+MGMT_IP=$(grep "^MANAGEMENT_IP=" "$ENV_FILE" | cut -d= -f2- | tr -d '"' || true)
+MGMT_IP="${MGMT_IP:-127.0.0.1}"
 
 log_info "Service URLs (accessible from $MGMT_IP):"
 echo ""
