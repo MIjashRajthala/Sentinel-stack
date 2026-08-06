@@ -2,204 +2,140 @@
 
 ## Network Architecture
 
-```
-                              INTERNET
-                                 |
-                    +------------+------------+
-                    |    ISP Router/Modem     |
-                    |  (Bridge mode ideally)  |
-                    +------------+------------+
-                                 |  Public IP (DHCP/PPPoE)
-                                 |
-                    +============+============+
-                    ||                       ||
-                    ||     pfSense CE        ||  <-- BARE METAL or VM
-                    ||    ==============     ||      (NOT Docker)
-                    ||    Network Gateway    ||
-                    ||    ==============     ||
-                    ||                       ||
-                    ||  +-----------------+  ||
-                    ||  | Suricata IDS    |  ||   EVE JSON logs
-                    ||  | (inline/legacy) |  ||   -> rsyslog
-                    ||  +-----------------+  ||
-                    ||  +-----------------+  ||
-                    ||  | DHCP Server     |  ||   192.168.10.0/24 (LAN)
-                    ||  +-----------------+  ||   192.168.20.0/24 (Users)
-                    ||  +-----------------+  ||   192.168.30.0/24 (IoT)
-                    ||  | VLAN 10 Mgmt    |  ||   192.168.40.0/24 (Servers)
-                    ||  | VLAN 20 Users   |  ||
-                    ||  | VLAN 30 IoT     |  ||
-                    ||  | VLAN 40 Srv     |  ||
-                    ||  +-----------------+  ||
-                    ||  +-----------------+  ||
-                    ||  | WireGuard VPN   |  ||   10.200.200.0/24
-                    ||  +-----------------+  ||
-                    ||  +-----------------+  ||
-                    ||  | Syslog Forward  |  ||   -> Docker:514/udp
-                    ||  +-----------------+  ||
-                    ||  +-----------------+  ||
-                    ||  | DNS Forwarder   |  ||   -> Pi-hole:53
-                    ||  +-----------------+  ||
-                    ||                       ||
-                    ++=+=+=+=+=+=+=+=+=+=+=+=++
-                       |         |         |
-              +--------+         |         +---------+
-              |                  |                   |
-    +---------v---------+  +----v-----+    +--------v--------+
-    |  VLAN 10          |  | VLAN 20  |    | VLAN 40         |
-    |  Management       |  | Users    |    | Servers/Docker  |
-    |  192.168.10.0/24  |  |192.168.20|    | 192.168.40.0/24 |
-    |                   |  |          |    |                 |
-    | Admin workstation |  | Laptops  |    | Ubuntu Docker   |
-    | (SSH/https only)  |  | Phones   |    | Host            |
-    +-------------------+  +----------+    |                 |
-                                           | +-------------+ |
-                                           | | Docker Eng. | |
-                                           | +------+------+ |
-                                           |        |        |
-                                           |  +-----v------+ |
-                                           |  | br-shog-*  | |
-                                           |  |  Networks  | |
-                                           |  +-----+------+ |
-                                           |        |        |
-                                           |  +-----v-----+  |
-                                           |  | Containers|  |
-                                           |  +-----------+  |
-                                           |                 |
-                                           +-----------------+
+```mermaid
+flowchart TB
+    internet(["Internet"]) --> router["ISP Router / Modem<br/>Bridge mode preferred"]
+    router -->|"Public IP (DHCP / PPPoE)"| gateway
+
+    subgraph pfsense["pfSense CE — Network Gateway<br/>(bare metal or VM; not Docker)"]
+        direction TB
+        gateway["Gateway / Firewall"]
+        suricata["Suricata IDS<br/>(inline / legacy)"]
+        dhcp["DHCP Server"]
+        vlans["VLAN Routing"]
+        vpn["WireGuard VPN<br/>10.200.200.0/24"]
+        syslog["Syslog Forwarder"]
+        dns["DNS Forwarder"]
+
+        gateway --> suricata
+        gateway --> dhcp
+        gateway --> vlans
+        gateway --> vpn
+        gateway --> syslog
+        gateway --> dns
+        suricata -->|"EVE JSON logs"| syslog
+    end
+
+    vlans --> vlan10node
+    vlans --> vlan20node
+    vlans --> vlan30node
+    vlans --> dockerHost
+
+    subgraph vlan10["VLAN 10 — Management<br/>192.168.10.0/24"]
+        vlan10node["Admin workstation<br/>SSH / HTTPS only"]
+    end
+
+    subgraph vlan20["VLAN 20 — Users<br/>192.168.20.0/24"]
+        vlan20node["Laptops and phones"]
+    end
+
+    subgraph vlan30["VLAN 30 — IoT<br/>192.168.30.0/24"]
+        vlan30node["IoT devices"]
+    end
+
+    subgraph vlan40["VLAN 40 — Servers / Docker<br/>192.168.40.0/24"]
+        direction TB
+        dockerHost["Ubuntu Docker Host"] --> engine["Docker Engine"]
+        engine --> networks["br-shog-* networks"]
+        networks --> containers["Containers"]
+        rsyslog["rsyslog<br/>:514/udp"]
+        pihole["Pi-hole<br/>:53"]
+    end
+
+    syslog -->|"Docker :514/udp"| rsyslog
+    dns -->|"Pi-hole :53"| pihole
 ```
 
 ## pfSense to Docker Host — Physical/Logical Connections
 
-```
-    pfSense LAN port (igb1/vmx1)
-            |
-            |  192.168.40.1/24 (VLAN 40 gateway)
-            +-------------------------------------------+
-                                                        |
-                                            +-----------v-----------+
-                                            |   Ubuntu Server       |
-                                            |   (Docker Host)       |
-                                            |   192.168.40.10/24    |
-                                            |   Gateway: 192.168.40.1|
-                                            +-----------+-----------+
-                                                        |
-                                            +-----------v-----------+
-                                            |   br-shog-mgmt        |  172.27.1.0/24
-                                            |   br-shog-sec         |  172.28.1.0/24
-                                            |   br-shog-mon         |  172.29.1.0/24 (internal)
-                                            +-----------------------+
+```mermaid
+flowchart LR
+    pfsense["pfSense LAN port<br/>igb1 / vmx1"]
+    ubuntu["Ubuntu Server — Docker Host<br/>192.168.40.10/24<br/>Gateway: 192.168.40.1"]
+    bridges["Docker bridge networks<br/>br-shog-mgmt — 172.27.1.0/24<br/>br-shog-sec — 172.28.1.0/24<br/>br-shog-mon — 172.29.1.0/24 (internal)"]
+
+    pfsense -->|"VLAN 40 gateway<br/>192.168.40.1/24"| ubuntu
+    ubuntu --> bridges
 ```
 
 ## Docker Network Segmentation
 
-```
-    +------------------+      +------------------+      +------------------+
-    |   Management     |      |    Security      |      |   Monitoring     |
-    |   172.27.1.0/24  |      |   172.28.1.0/24  |      |   172.29.1.0/24  |
-    |                  |      |                  |      |  (no external    |
-    | Portainer   .2   |      | Pi-hole     .2   |      |   gateway)       |
-    | Uptime Kuma .3   |      | Unbound     .3   |      |                  |
-    |                  |      | rsyslog     .4   |      | Pi-hole     .2   |
-    |  +  MANAGEMENT_IP|      | CrowdSec    .5   |      | rsyslog     .4   |
-    |    bound ports   |      | Wazuh Idx   .10  |      | CrowdSec    .5   |
-    |   (host iface)   |      | Wazuh Mgr   .11  |      | Wazuh Mgr   .11  |
-    |                  |      | Wazuh Dash  .12  |      | Wazuh Dash  .12  |
-    |                  |      | Wazuh Agent .13  |      | Portainer   .3   |
-    |                  |      | Filebeat    .15  |      | Uptime Kuma .6   |
-    |                  |      | (OpenCTI)   .20+ |      | Alerting    .7   |
-    +------------------+      +------------------+      +------------------+
-           |                           |                        |
-           |          Host firewall restricts access             |
-           |          to MANAGEMENT_IP only for admin UIs        |
-           +---------------------------+------------------------+
-                                       |
-                               Docker Host
+```mermaid
+flowchart TB
+    admin(["Admin traffic"]) -->|"MANAGEMENT_IP only"| firewall{"Host firewall"}
+
+    subgraph management["Management — 172.27.1.0/24"]
+        management_services["Portainer — .2<br/>Uptime Kuma — .3<br/><br/>Admin UI ports bound to MANAGEMENT_IP"]
+    end
+
+    subgraph security["Security — 172.28.1.0/24"]
+        security_services["Pi-hole — .2<br/>Unbound — .3<br/>rsyslog — .4<br/>CrowdSec — .5<br/>Wazuh Indexer — .10<br/>Wazuh Manager — .11<br/>Wazuh Dashboard — .12<br/>Wazuh Agent — .13<br/>Filebeat — .15<br/>OpenCTI — .20+"]
+    end
+
+    subgraph monitoring["Monitoring — 172.29.1.0/24<br/>(no external gateway)"]
+        monitoring_services["Pi-hole — .2<br/>rsyslog — .4<br/>CrowdSec — .5<br/>Wazuh Manager — .11<br/>Wazuh Dashboard — .12<br/>Portainer — .3<br/>Uptime Kuma — .6<br/>Alerting — .7"]
+    end
+
+    firewall --> management_services
+    management_services --> docker["Docker Host"]
+    security_services --> docker
+    monitoring_services --> docker
 ```
 
 ## Data Flow Diagram
 
-```
-    LAN Clients                         SHOG Stack
-    +---------+                        +-----------+
-    | Device  |--(1) DNS Query-------->|  Pi-hole  |
-    | (user)  |                        |  :53      |
-    +---------+                        +-----+-----+
-                                             |
-                                             | (2) Recursive query
-                                             v
-                                       +-----------+
-                                       |  Unbound  |
-                                       |  :5335    |
-                                       +-----+-----+
-                                             |
-                                             | (3) Root server resolution
-                                             v
-                                       +-----------+
-                                       |  Internet |
-                                       |  DNS      |
-                                       +-----------+
+```mermaid
+flowchart LR
+    subgraph sources["Event and Query Sources"]
+        direction TB
+        device["LAN client device"]
+        firewall["pfSense firewall logs"]
+        suricata["Suricata alerts"]
+        hostfs["Docker host filesystem events"]
+        containerlogs["Container logs"]
+    end
 
-    pfSense                            SHOG Stack
-    +---------+                        +-----------+
-    |Firewall |--(4) Syslog----------->|  rsyslog  |
-    | Logs    |    UDP 514             |  :514     |
-    +---------+                        +-----+-----+
-                                             |
-                                             | (5) Read log files
-                                             v
-                                       +-----------+
-                                       | Filebeat  |
-                                       +-----+-----+
-                                             |
-                                             | (6) Ingest
-                                             v
-                                       +-----------+
-                                       | Wazuh     |
-                                       | Indexer   |
-                                       | :9200     |
-                                       +-----+-----+
-                                             ^
-                                             | (7) Query/Index
-    +---------+                        +-----------+
-    | Suricata|--(8) EVE JSON-------->|  Wazuh    |
-    | Alerts  |    (via syslog)       |  Manager  |
-    +---------+                        +-----+-----+
-                                             |
-                                             | (9) Alerts
-                                             v
-                                       +-----------+
-                                       | Wazuh     |
-                                       | Dashboard |
-                                       | :5601     |
-                                       +-----------+
+    subgraph shog["SHOG Stack"]
+        direction TB
+        pihole["Pi-hole<br/>:53"]
+        unbound["Unbound<br/>:5335"]
+        internetdns["Internet DNS"]
+        rsyslog["rsyslog<br/>:514"]
+        filebeat["Filebeat"]
+        indexer["Wazuh Indexer<br/>:9200"]
+        manager["Wazuh Manager"]
+        dashboard["Wazuh Dashboard<br/>:5601"]
+        agent["Wazuh Agent"]
+        crowdsec["CrowdSec"]
+        bouncer["CrowdSec Bouncer<br/>(iptables)"]
+    end
 
-    Docker Host                        SHOG Stack
-    +---------+                        +-----------+
-    | Host FS |--(10) Audit/FIM------>| Wazuh     |
-    | Events  |                        | Agent     |
-    +---------+                        +-----+-----+
-                                             |
-                                             | (11) Forward
-                                             v
-                                       +-----------+
-                                       | Wazuh     |
-                                       | Manager   |
-                                       +-----------+
+    device -->|"(1) DNS query"| pihole
+    pihole -->|"(2) Recursive query"| unbound
+    unbound -->|"(3) Root server resolution"| internetdns
 
-    Any Container                      SHOG Stack
-    +---------+                        +-----------+
-    | Logs    |--(12) Docker API----->| CrowdSec  |
-    |         |    (read-only)        |           |
-    +---------+                        +-----+-----+
-                                             |
-                                             | (13) Decision
-                                             v
-                                       +-----------+
-                                       | CrowdSec  |
-                                       | Bouncer   |
-                                       | (iptables)|
-                                       +-----------+
+    firewall -->|"(4) Syslog — UDP 514"| rsyslog
+    rsyslog -->|"(5) Read log files"| filebeat
+    filebeat -->|"(6) Ingest"| indexer
+    manager -->|"(7) Query / index"| indexer
+    suricata -->|"(8) EVE JSON via syslog"| manager
+    manager -->|"(9) Alerts"| dashboard
+
+    hostfs -->|"(10) Audit / FIM"| agent
+    agent -->|"(11) Forward"| manager
+
+    containerlogs -->|"(12) Docker API — read-only"| crowdsec
+    crowdsec -->|"(13) Decision"| bouncer
 ```
 
 ## Component Inventory
