@@ -10,65 +10,32 @@ A reproducible, open-source defensive security platform for home offices and sma
 
 ## Architecture Overview
 
-```
-                     +-----------------------------+
-                     |      INTERNET / ISP         |
-                     +-------------+---------------+
-                                   |
-                     +-------------v---------------+
-                     |   ISP Router / Modem        |
-                     |   (Bridge/Pass-through      |
-                     |    mode recommended)        |
-                     +-------------+---------------+
-                                   | WAN
-                     +-------------v---------------+
-                     |                             |
-                     |      pfSense CE             |  <-- NOT in Docker
-                     |      (Bare Metal / VM)      |      Edge Firewall/Router
-                     |                             |
-                     |  - Suricata IDS             |
-                     |  - DHCP Server              |
-                     |  - DNS Forwarder -> Pi-hole |
-                     |  - Firewall Rules           |
-                     |  - WireGuard VPN            |
-                     |  - VLAN Routing             |
-                     |  - Syslog Forwarding        |
-                     |                             |
-                     +--+-----------+--------------+
-                        |           | LAN
-           +------------+           +-----------------+
-           |                                          |
-    +------v------+                         +---------v---------+
-    | Management  |                         |  Protected LAN    |
-    |  VLAN 10    |                         |  (User devices)   |
-    |             |                         |                   |
-    | Admin only  |                         |  VLAN 20, 30, 40  |
-    +------+------+                         +---------+---------+
-           |                                          |
-           |  +---------------------------------------+
-           |  |
-    +------v--v------------------------------------------+
-    |                                                    |
-    |        Ubuntu Server — Docker Host                 |
-    |                                                    |
-    |  +----------------+  +----------------+           |
-    |  | Portainer CE   |  | Wazuh Stack    |           |
-    |  | :9443          |  | (SIEM) :5601   |           |
-    |  +----------------+  +----------------+           |
-    |  +----------------+  +----------------+           |
-    |  | Pi-hole        |  | CrowdSec       |           |
-    |  | DNS :53        |  | Threat Det.    |           |
-    |  +----------------+  +----------------+           |
-    |  +----------------+  +----------------+           |
-    |  | Unbound        |  | Uptime Kuma    |           |
-    |  | DNS Recursor   |  | Monitor :3001  |           |
-    |  +----------------+  +----------------+           |
-    |  +----------------+  +----------------+           |
-    |  | rsyslog        |  | Wazuh Agent    |           |
-    |  | Log Receiver   |  | Host telemetry |           |
-    |  +----------------+  +----------------+           |
-    |                                                    |
-    +----------------------------------------------------+
+```mermaid
+flowchart TB
+    internet(["Internet / ISP"]) --> router["ISP Router / Modem<br/>Bridge / pass-through mode recommended"]
+    router -->|"WAN"| firewall
+
+    subgraph edge["pfSense CE — Bare Metal / VM (not Docker)"]
+        direction TB
+        firewall["Edge Firewall / Router"]
+        edgeServices["Suricata IDS · DHCP Server<br/>DNS Forwarder → Pi-hole<br/>Firewall Rules · WireGuard VPN<br/>VLAN Routing · Syslog Forwarding"]
+        firewall --> edgeServices
+    end
+
+    firewall --> management["Management VLAN 10<br/>Admin only"]
+    firewall --> protected["Protected LAN<br/>User devices on VLANs 20, 30 and 40"]
+
+    management --> dockerIngress
+    protected --> dockerIngress
+
+    subgraph docker["Ubuntu Server — Docker Host"]
+        direction TB
+        dockerIngress["Docker Engine / Container Networks"]
+        adminServices["Management<br/>Portainer CE :9443 · Uptime Kuma :3001"]
+        securityServices["Security and SIEM<br/>Wazuh Stack :5601 · Wazuh Agent<br/>Pi-hole DNS :53 · Unbound<br/>CrowdSec · rsyslog"]
+        dockerIngress --> adminServices
+        dockerIngress --> securityServices
+    end
 ```
 
 **Key principle**: pfSense is the network gateway and stays **outside Docker**. All other services run as containers on an Ubuntu Docker host behind pfSense.
@@ -180,7 +147,7 @@ shog/
 │   ├── backup.sh                   # Backup all data
 │   └── health-check.sh             # Service health monitor
 ├── docs/
-│   ├── architecture.md             # Architecture & ASCII diagrams
+│   ├── architecture.md             # Architecture & Mermaid diagrams
 │   ├── pfsense-setup.md            # pfSense configuration
 │   ├── threat-model.md             # Threat model & controls
 │   ├── evaluation-plan.md          # Testing & metrics
