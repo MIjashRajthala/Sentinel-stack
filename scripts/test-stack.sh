@@ -247,9 +247,43 @@ wait_for_health() {
     return 0
 }
 
+prepare_integration_env() {
+    if [[ -f "$PROJECT_DIR/.env" ]]; then
+        ENV_FILE="$PROJECT_DIR/.env"
+        pass "Existing .env will be used for integration"
+        return 0
+    fi
+
+    record_command cp .env.example .env
+    if ! cp "$PROJECT_DIR/.env.example" "$PROJECT_DIR/.env"; then
+        fail "Could not create .env for integration" "cp .env.example .env"
+        return 1
+    fi
+    chmod 600 "$PROJECT_DIR/.env" 2>/dev/null || true
+
+    record_command bash scripts/generate-secrets.sh
+    if ! (cd "$PROJECT_DIR" && bash scripts/generate-secrets.sh); then
+        fail "Could not generate integration secrets" "bash scripts/generate-secrets.sh"
+        return 1
+    fi
+
+    ENV_FILE="$PROJECT_DIR/.env"
+    pass "Generated a protected .env for integration"
+}
+
 integration_checks() {
     log "Running integration checks"
     require_docker || return 0
+
+    record_command ./scripts/preflight-check.sh --mode "$MODE"
+    if (cd "$PROJECT_DIR" && ./scripts/preflight-check.sh --mode "$MODE"); then
+        pass "Host preflight passes for $MODE mode"
+    else
+        fail "Host preflight failed for $MODE mode" "./scripts/preflight-check.sh --mode $MODE"
+        return 0
+    fi
+
+    prepare_integration_env || return 0
 
     record_command docker compose --env-file "$ENV_FILE" "${compose_args[@]}" up -d --remove-orphans
     if (cd "$PROJECT_DIR" && compose up -d --remove-orphans); then

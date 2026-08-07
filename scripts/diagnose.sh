@@ -141,7 +141,11 @@ write_next_steps() {
         if grep -Eqi 'permission denied.*docker|docker.*permission denied|connect.*docker daemon' "$evidence_file"; then
             echo "1. Confirm Docker is running: \`docker info\`."
             echo "2. On Linux, add your user to the Docker group, sign out and back in: \`sudo usermod -aG docker \$USER\`."
-        elif grep -Eqi 'address already in use|port is already allocated|bind.*failed' "$evidence_file"; then
+        elif grep -Eqi 'failed to resolve reference|manifest unknown|pull access denied|image.*not found' "$evidence_file"; then
+            echo "1. Identify the missing image and tag in \`source.log\`."
+            echo "2. Verify the candidate tag: \`docker manifest inspect IMAGE:TAG\`."
+            echo "3. Update the pin only after checking the publisher's official release and image pages."
+        elif grep -Eqi 'address already in use|port is already allocated|port .*already in use|bind.*failed' "$evidence_file"; then
             echo "1. Find the conflicting listener: \`sudo ss -lntup\`."
             echo "2. Stop the conflicting service or change the corresponding host binding in \`.env\`/Compose."
         elif grep -Eqi 'no space left|disk quota|filesystem.*full' "$evidence_file"; then

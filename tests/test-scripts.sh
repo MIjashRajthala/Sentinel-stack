@@ -165,6 +165,26 @@ else
     fail "diagnostic bundle records the reproduction command"
 fi
 
+cat > "$TEST_TMP/image-pull.log" <<'EOF'
+failed to resolve reference "docker.io/example/service:old": not found
+EOF
+
+"$PROJECT_DIR/scripts/diagnose.sh" \
+    --mode lite \
+    --reason "image pull failed" \
+    --command "docker compose pull" \
+    --exit-code 1 \
+    --output-dir "$TEST_TMP/image-diagnostics" \
+    --source-log "$TEST_TMP/image-pull.log" \
+    --reproduce "./scripts/test-stack.sh --mode lite --level smoke" \
+    > "$TEST_TMP/image-diagnose.out" 2>&1
+
+if grep -q 'docker manifest inspect IMAGE:TAG' "$TEST_TMP/image-diagnostics/next-steps.md"; then
+    pass "diagnostic classifier recommends image-tag verification"
+else
+    fail "diagnostic classifier recommends image-tag verification"
+fi
+
 printf '1..%d\n' "$((PASS + FAIL))"
 printf '# passed=%d failed=%d\n' "$PASS" "$FAIL"
 [[ "$FAIL" -eq 0 ]]

@@ -36,7 +36,7 @@ Use `--keep-running` when you want to inspect the test deployment manually.
 |---|---|---|
 | `static` | Bash syntax, required files, profile wiring, Compose config when Docker is available | No |
 | `smoke` | Static checks, Docker daemon access, Compose plugin, image pulls | Downloads images |
-| `integration` | Deploys the chosen tier, waits for expected health, probes DNS and web endpoints, captures resource data | Starts/stops containers |
+| `integration` | Runs host preflight, generates `.env` if absent, deploys the chosen tier, waits for health, probes DNS and web endpoints, captures resource data | Creates `.env`; starts/stops containers |
 
 ## Deployment modes
 

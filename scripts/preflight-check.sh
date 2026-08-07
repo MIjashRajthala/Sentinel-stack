@@ -205,7 +205,7 @@ fi
 
 # Pi-hole DNS
 if ss -tln | grep -q ':53 '; then
-    log_warn "Port 53 (DNS) already in use — systemd-resolved may be active"
+    log_fail "Port 53 (DNS) already in use — Docker cannot publish Pi-hole on 0.0.0.0:53"
     log_info "  Disable with: sudo systemctl disable --now systemd-resolved"
 else
     log_pass "Port 53 (DNS) available"

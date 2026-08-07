@@ -452,7 +452,7 @@ services:
   # ===========================================================================
   uptime-kuma:
     container_name: shog-uptime-kuma
-    image: louislam/uptime-kuma:1.23.11
+    image: louislam/uptime-kuma:2.3.2
     restart: unless-stopped
     networks:
       management:

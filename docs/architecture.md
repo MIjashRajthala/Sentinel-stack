@@ -152,7 +152,7 @@ flowchart LR
 | 8 | wazuh-dashboard | wazuh/wazuh-dashboard | 4.7.2 | Web UI | wazuh-dashboard-data |
 | 9 | wazuh-agent | wazuh/wazuh-agent | 4.7.2 | Host telemetry | wazuh-agent-var-ossec |
 | 10 | portainer | portainer/portainer-ce | 2.19.4 | Container mgmt | portainer-data |
-| 11 | uptime-kuma | louislam/uptime-kuma | 1.23.11 | Monitoring | uptime-kuma-data |
+| 11 | uptime-kuma | louislam/uptime-kuma | 2.3.2 | Monitoring | uptime-kuma-data |
 | 12 | filebeat | docker.elastic.co/beats/filebeat-oss | 8.11.4 | Log shipper | filebeat-data, filebeat-logs |
 | 13 | alerting | ghcr.io/containrrr/shoutrrr | 0.8.0 | Notifications | alerting-data |
 | 14 | opencti-platform | opencti/platform | 6.0.0 | Threat intel | opencti-data |
