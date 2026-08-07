@@ -52,6 +52,66 @@ log_fail() { echo -e "${RED}[FAIL]${NC} $1"; ((++FAIL)); }
 log_info() { echo -e "${BLUE}[INFO]${NC} $1"; }
 log_section() { echo -e "\n${BOLD}=== $1 ===${NC}"; }
 
+PORT_CONFLICT_LISTENERS=""
+
+# Return success when an IPv4 listener would conflict with the requested bind.
+# A service bound to 127.0.0.53 does not conflict with a container published on
+# a different specific address such as 192.168.1.10.
+port_has_conflict() {
+    local bind_ip="$1"
+    local port="$2"
+    local listeners line endpoint listener_ip
+
+    command -v ss >/dev/null 2>&1 || return 2
+    listeners=$(ss -H -lntu "( sport = :$port )" 2>/dev/null || true)
+    PORT_CONFLICT_LISTENERS=""
+
+    while IFS= read -r line; do
+        [[ -n "$line" ]] || continue
+        endpoint=$(awk '{print $5}' <<< "$line")
+        listener_ip="${endpoint%:*}"
+        listener_ip="${listener_ip#[}"
+        listener_ip="${listener_ip%]}"
+        listener_ip="${listener_ip%%%*}"
+
+        # IPv6-only listeners do not block an explicit IPv4 Docker publish.
+        [[ "$listener_ip" == *:* ]] && continue
+
+        if [[ "$bind_ip" == "0.0.0.0" || "$listener_ip" == "$bind_ip" || \
+              "$listener_ip" == "0.0.0.0" || "$listener_ip" == "*" ]]; then
+            PORT_CONFLICT_LISTENERS+="${line}"$'\n'
+        fi
+    done <<< "$listeners"
+
+    [[ -n "$PORT_CONFLICT_LISTENERS" ]]
+}
+
+check_host_port() {
+    local bind_ip="$1"
+    local port="$2"
+    local label="$3"
+    local severity="${4:-fail}"
+    local status
+
+    if port_has_conflict "$bind_ip" "$port"; then
+        if [[ "$severity" == "warn" ]]; then
+            log_warn "Port $port ($label) conflicts on $bind_ip"
+        else
+            log_fail "Port $port ($label) conflicts on $bind_ip"
+        fi
+        log_info "  $(head -n 1 <<< "$PORT_CONFLICT_LISTENERS")"
+        return 0
+    else
+        status=$?
+    fi
+
+    if [[ "$status" -eq 2 ]]; then
+        log_warn "Cannot inspect port $port ($label) because ss is unavailable"
+    else
+        log_pass "Port $port ($label) available on $bind_ip"
+    fi
+}
+
 # ---------------------------------------------------------------------------
 # 1. OS CHECK
 # ---------------------------------------------------------------------------
@@ -193,67 +253,28 @@ fi
 # ---------------------------------------------------------------------------
 log_section "Port Availability"
 
-# Only check ports that bind to host interfaces
-# Internal-only ports (monitoring network, etc.) are skipped
+# Check the actual bind addresses and both TCP and UDP listeners. This avoids a
+# false conflict between systemd-resolved on 127.0.0.53 and Pi-hole on the LAN.
+PIHOLE_DNS_BIND_IP="${PIHOLE_DNS_BIND_IP:-0.0.0.0}"
+PIHOLE_WEB_IP="${PIHOLE_WEB_IP:-127.0.0.1}"
+MANAGEMENT_IP="${MANAGEMENT_IP:-127.0.0.1}"
 
-# Unbound localhost DNS
-if ss -tln | grep -q ':5335 '; then
-    log_fail "Port 5335 (Unbound DNS) already in use"
-else
-    log_pass "Port 5335 (Unbound DNS) available"
+check_host_port "127.0.0.1" 5335 "Unbound DNS"
+check_host_port "$PIHOLE_DNS_BIND_IP" 53 "Pi-hole DNS"
+if [[ "$PIHOLE_DNS_BIND_IP" == "0.0.0.0" ]]; then
+    log_info "  Set PIHOLE_DNS_BIND_IP to a stable LAN address to coexist with systemd-resolved"
 fi
+check_host_port "$PIHOLE_WEB_IP" 8080 "Pi-hole web"
+check_host_port "0.0.0.0" 514 "rsyslog"
 
-# Pi-hole DNS
-if ss -tln | grep -q ':53 '; then
-    log_fail "Port 53 (DNS) already in use — Docker cannot publish Pi-hole on 0.0.0.0:53"
-    log_info "  Disable with: sudo systemctl disable --now systemd-resolved"
-else
-    log_pass "Port 53 (DNS) available"
-fi
-
-# Pi-hole Web
-if ss -tln | grep -q ':8080 '; then
-    log_fail "Port 8080 (Pi-hole web) already in use"
-else
-    log_pass "Port 8080 (Pi-hole web) available"
-fi
-
-# Rsyslog
-if ss -tln | grep -q ':514 '; then
-    log_warn "Port 514 (rsyslog) already in use"
-else
-    log_pass "Port 514 (rsyslog) available"
-fi
-
-# Wazuh Dashboard (full mode only)
 if [[ "$MODE" == "full" ]]; then
-    if ss -tln | grep -q ':5601 '; then
-        log_fail "Port 5601 (Wazuh Dashboard) already in use"
-    else
-        log_pass "Port 5601 (Wazuh Dashboard) available"
-    fi
+    check_host_port "$MANAGEMENT_IP" 5601 "Wazuh Dashboard"
 fi
 
-# Portainer
-if ss -tln | grep -q ':9443 '; then
-    log_fail "Port 9443 (Portainer HTTPS) already in use"
-else
-    log_pass "Port 9443 (Portainer HTTPS) available"
-fi
-
-# Uptime Kuma
-if ss -tln | grep -q ':3001 '; then
-    log_fail "Port 3001 (Uptime Kuma) already in use"
-else
-    log_pass "Port 3001 (Uptime Kuma) available"
-fi
-
-# OpenCTI (optional profile)
-if ss -tln | grep -q ':8088 '; then
-    log_warn "Port 8088 (OpenCTI) already in use"
-else
-    log_pass "Port 8088 (OpenCTI) available"
-fi
+check_host_port "$MANAGEMENT_IP" 9443 "Portainer HTTPS"
+check_host_port "$MANAGEMENT_IP" 9000 "Portainer HTTP"
+check_host_port "$MANAGEMENT_IP" 3001 "Uptime Kuma"
+check_host_port "$MANAGEMENT_IP" 8088 "OpenCTI optional profile" warn
 
 # ---------------------------------------------------------------------------
 # 10. NETWORK CONFLICT CHECK

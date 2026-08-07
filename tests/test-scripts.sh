@@ -36,6 +36,8 @@ expect_exit "health check rejects invalid mode" 2 \
     "$PROJECT_DIR/scripts/health-check.sh" --mode invalid
 expect_exit "preflight rejects invalid mode" 2 \
     "$PROJECT_DIR/scripts/preflight-check.sh" --mode invalid
+expect_exit "environment preparation rejects invalid mode" 2 \
+    "$PROJECT_DIR/scripts/prepare-environment.sh" --mode invalid
 expect_exit "diagnostics reject invalid mode" 2 \
     "$PROJECT_DIR/scripts/diagnose.sh" --mode invalid
 
@@ -66,6 +68,42 @@ else
 fi
 
 mkdir -p "$TEST_TMP/bin"
+cat > "$TEST_TMP/bin/ip" <<'EOF'
+#!/usr/bin/env bash
+if [[ "$*" == "-4 route get 1.1.1.1" ]]; then
+    echo "1.1.1.1 via 192.0.2.1 dev eth0 src 192.0.2.10 uid 1000"
+    exit 0
+fi
+exit 1
+EOF
+chmod +x "$TEST_TMP/bin/ip"
+
+PREPARED_ENV="$TEST_TMP/prepared.env"
+expect_exit "environment preparation detects the primary IPv4 address" 0 \
+    env PATH="$TEST_TMP/bin:$PATH" SHOG_ENV_FILE="$PREPARED_ENV" \
+    SHOG_ENV_EXAMPLE="$PROJECT_DIR/.env.example" \
+    "$PROJECT_DIR/scripts/prepare-environment.sh" --mode lite
+
+if grep -q '^SHOG_MODE=lite$' "$PREPARED_ENV" && \
+   grep -q '^PIHOLE_DNS_BIND_IP=192.0.2.10$' "$PREPARED_ENV"; then
+    pass "environment preparation records mode and DNS bind address"
+else
+    fail "environment preparation records mode and DNS bind address"
+fi
+
+sed -i.bak 's/^PIHOLE_DNS_BIND_IP=.*/PIHOLE_DNS_BIND_IP=198.51.100.20/' "$PREPARED_ENV"
+rm -f "$PREPARED_ENV.bak"
+env PATH="$TEST_TMP/bin:$PATH" SHOG_ENV_FILE="$PREPARED_ENV" \
+    SHOG_ENV_EXAMPLE="$PROJECT_DIR/.env.example" \
+    "$PROJECT_DIR/scripts/prepare-environment.sh" --mode full \
+    > "$TEST_TMP/prepare-existing.out" 2>&1
+if grep -q '^SHOG_MODE=full$' "$PREPARED_ENV" && \
+   grep -q '^PIHOLE_DNS_BIND_IP=198.51.100.20$' "$PREPARED_ENV"; then
+    pass "environment preparation preserves an explicit DNS bind address"
+else
+    fail "environment preparation preserves an explicit DNS bind address"
+fi
+
 cat > "$TEST_TMP/bin/docker" <<'EOF'
 #!/usr/bin/env bash
 set -u

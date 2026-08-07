@@ -15,7 +15,6 @@ set -Eeuo pipefail
 # Absolute paths
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ENV_FILE="$SCRIPT_DIR/.env"
-EXAMPLE_ENV="$SCRIPT_DIR/.env.example"
 ORIGINAL_ARGS=("$@")
 
 # Colors
@@ -185,7 +184,16 @@ log_info "Deployment mode: $MODE"
 log_info "Install log: $INSTALL_LOG"
 
 # ============================================================================
-# 1. PREFLIGHT CHECKS
+# 1. ENVIRONMENT CONFIGURATION
+# ============================================================================
+log_section "Environment Configuration"
+
+bash "$SCRIPT_DIR/scripts/prepare-environment.sh" --mode "$MODE"
+log_ok "Host-specific environment settings are ready"
+log_warn "Keep PIHOLE_DNS_BIND_IP on a static address or DHCP reservation"
+
+# ============================================================================
+# 2. PREFLIGHT CHECKS
 # ============================================================================
 log_section "Preflight Checks"
 
@@ -194,31 +202,6 @@ if [[ "$SKIP_PREFLIGHT" == true ]]; then
 else
     log_info "Running preflight checks..."
     bash "$SCRIPT_DIR/scripts/preflight-check.sh" --mode "$MODE"
-fi
-
-# ============================================================================
-# 2. CREATE .ENV FROM EXAMPLE
-# ============================================================================
-log_section "Environment Configuration"
-
-if [[ ! -f "$ENV_FILE" ]]; then
-    if [[ ! -f "$EXAMPLE_ENV" ]]; then
-        log_error ".env.example not found at $EXAMPLE_ENV"
-        false
-    fi
-    cp "$EXAMPLE_ENV" "$ENV_FILE"
-    log_ok "Created .env from .env.example"
-    log_warn "Review and edit $ENV_FILE before continuing"
-else
-    log_ok ".env already exists"
-fi
-
-# Record the selected tier for health checks and future reruns.
-if grep -q '^SHOG_MODE=' "$ENV_FILE"; then
-    sed -i.bak "s/^SHOG_MODE=.*/SHOG_MODE=$MODE/" "$ENV_FILE"
-    rm -f "$ENV_FILE.bak"
-else
-    printf '\nSHOG_MODE=%s\n' "$MODE" >> "$ENV_FILE"
 fi
 
 # ============================================================================

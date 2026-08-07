@@ -148,6 +148,7 @@ write_next_steps() {
         elif grep -Eqi 'address already in use|port is already allocated|port .*already in use|bind.*failed' "$evidence_file"; then
             echo "1. Find the conflicting listener: \`sudo ss -lntup\`."
             echo "2. Stop the conflicting service or change the corresponding host binding in \`.env\`/Compose."
+            echo "3. For Pi-hole port 53, set \`PIHOLE_DNS_BIND_IP\` to a stable LAN address instead of disabling Ubuntu's resolver."
         elif grep -Eqi 'no space left|disk quota|filesystem.*full' "$evidence_file"; then
             echo "1. Inspect storage: \`df -h\` and \`docker system df -v\`."
             echo "2. Remove only confirmed-unused Docker data; do not prune volumes containing SHOG data."

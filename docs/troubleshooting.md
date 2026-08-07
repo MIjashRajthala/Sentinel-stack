@@ -40,11 +40,18 @@ sudo sysctl --system
 
 **Problem**: Port 53 already in use (systemd-resolved)
 ```bash
-# Fix:
-sudo systemctl disable --now systemd-resolved
-sudo rm -f /etc/resolv.conf
-echo "nameserver 1.1.1.1" | sudo tee /etc/resolv.conf
+# Preferred fix: bind Pi-hole only to the host's stable LAN address.
+ip -4 route get 1.1.1.1
+sed -i 's/^PIHOLE_DNS_BIND_IP=.*/PIHOLE_DNS_BIND_IP=192.168.1.10/' .env
+./scripts/preflight-check.sh --mode lite
 ```
+
+Replace `192.168.1.10` with the address shown after `src`, and reserve that
+address in pfSense DHCP (or configure it statically). The installer and
+integration test do this detection automatically on first use. A listener on
+`127.0.0.53:53` can coexist with Pi-hole on a different, specific LAN address;
+there is normally no need to disable `systemd-resolved` or rewrite
+`/etc/resolv.conf`.
 
 **Problem**: Docker not installed or not running
 ```bash
@@ -125,15 +132,15 @@ docker logs shog-pihole --tail 50
 # 2. Test Unbound directly
 dig @127.0.0.1 -p 5335 google.com
 
-# 3. Check if port 53 is free on host
-sudo ss -tlnp | grep :53
+# 3. Check which addresses use port 53
+sudo ss -lntup '( sport = :53 )'
 
 # 4. Check Pi-hole config
 docker exec shog-pihole pihole status
 ```
 
 **Fixes**:
-- Ensure systemd-resolved is disabled (see above)
+- Ensure `PIHOLE_DNS_BIND_IP` is a stable LAN address not used by another listener
 - Restart Pi-hole: `docker restart shog-pihole`
 - Check if Unbound is healthy (Pi-hole depends on it)
 - Verify `PIHOLE_DNS_` in `.env` points to Unbound IP

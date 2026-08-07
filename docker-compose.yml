@@ -57,9 +57,8 @@ services:
         ipv4_address: ${PIHOLE_MONITORING_IP:-172.29.1.2}
     ports:
       - "${PIHOLE_WEB_IP:-127.0.0.1}:8080:80/tcp"
-      - "53:53/tcp"
-      - "53:53/udp"
-      - "67:67/udp"
+      - "${PIHOLE_DNS_BIND_IP:-0.0.0.0}:53:53/tcp"
+      - "${PIHOLE_DNS_BIND_IP:-0.0.0.0}:53:53/udp"
     environment:
       TZ: ${TZ:-UTC}
       WEBPASSWORD: ${PIHOLE_WEBPASSWORD}

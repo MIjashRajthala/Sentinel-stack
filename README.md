@@ -73,8 +73,9 @@ cd Sentinel-stack
 ```
 
 The installer will:
-- Run preflight checks (OS, Docker, RAM, ports, kernel params)
 - Create `.env` from `.env.example` if absent
+- Auto-select a specific LAN address for Pi-hole DNS so Ubuntu's resolver can stay enabled
+- Run preflight checks (OS, Docker, RAM, TCP/UDP ports, kernel params)
 - Generate strong random secrets
 - Pull all container images
 - Start the stack and verify health
@@ -100,6 +101,10 @@ The installer will:
 # Disposable-host deployment test
 ./scripts/test-stack.sh --mode lite --level integration
 ```
+
+The installer and integration harness save the detected DNS bind address in
+`PIHOLE_DNS_BIND_IP`. Give that address a static assignment or DHCP reservation
+before production use.
 
 Each run records a transcript, exact commands, a summary, and—on failure—a
 diagnostic bundle with classified next steps and a reproduction command. See
