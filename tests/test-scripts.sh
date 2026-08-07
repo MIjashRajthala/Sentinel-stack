@@ -47,6 +47,46 @@ else
     fail "diagnostics never save interpolated Compose config"
 fi
 
+integration_teardown_block=$(sed -n '/docker stats --no-stream/,/if \[\[ "$KEEP_RUNNING"/p' \
+    "$PROJECT_DIR/scripts/test-stack.sh")
+if grep -q 'capture_failure_diagnostics' <<< "$integration_teardown_block"; then
+    pass "integration diagnostics are captured before stack teardown"
+else
+    fail "integration diagnostics are captured before stack teardown"
+fi
+
+if grep -q 'image: pihole/pihole:2026.05.0' "$PROJECT_DIR/docker-compose.yml" && \
+   grep -q 'FTLCONF_webserver_api_password:' "$PROJECT_DIR/docker-compose.yml" && \
+   grep -q 'FTLCONF_dns_upstreams:' "$PROJECT_DIR/docker-compose.yml" && \
+   ! grep -q '^[[:space:]]*WEBPASSWORD:' "$PROJECT_DIR/docker-compose.yml"; then
+    pass "Pi-hole uses its pinned v6 image and v6 environment variables"
+else
+    fail "Pi-hole uses its pinned v6 image and v6 environment variables"
+fi
+
+if grep -q 'image: crowdsecurity/crowdsec:v1.7.8' "$PROJECT_DIR/docker-compose.yml" && \
+   grep -q '^source: file$' "$PROJECT_DIR/configs/crowdsec/acquis.yaml" && \
+   ! grep -q '^type: docker$' "$PROJECT_DIR/configs/crowdsec/acquis.yaml" && \
+   grep -q 'CrowdSec acquisition validates in its pinned image' \
+       "$PROJECT_DIR/scripts/test-stack.sh"; then
+    pass "CrowdSec uses a supported release and acquisition schema"
+else
+    fail "CrowdSec uses a supported release and acquisition schema"
+fi
+
+if grep -q 'image: portainer/portainer-ce:2.39.2' "$PROJECT_DIR/docker-compose.yml" && \
+   grep -Fq 'test: ["CMD", "/portainer", "--version"]' "$PROJECT_DIR/docker-compose.yml"; then
+    pass "Portainer health check works without a shell"
+else
+    fail "Portainer health check works without a shell"
+fi
+
+if grep -q "NTPSynchronized)=yes" "$PROJECT_DIR/scripts/preflight-check.sh"; then
+    pass "preflight supports modern systemd NTP status"
+else
+    fail "preflight supports modern systemd NTP status"
+fi
+
 mapfile -t volume_names < <(awk '/^[[:space:]]+name: shog-/ {print $2}' "$PROJECT_DIR/docker-compose.yml")
 missing_backup=()
 missing_uninstall=()
@@ -244,6 +284,50 @@ if grep -q './scripts/test-stack.sh --mode lite --level smoke' "$TEST_TMP/config
     pass "diagnostic classifier prioritises configuration syntax errors"
 else
     fail "diagnostic classifier prioritises configuration syntax errors"
+fi
+
+cat > "$TEST_TMP/crowdsec-error.log" <<'EOF'
+crowdsec init: while loading acquisition config: field type not found in type fileacquisition.FileConfiguration
+failed to update hub: bad http code 403
+EOF
+
+"$PROJECT_DIR/scripts/diagnose.sh" \
+    --mode lite \
+    --reason "container is unhealthy" \
+    --command "./scripts/health-check.sh --mode lite" \
+    --exit-code 1 \
+    --output-dir "$TEST_TMP/crowdsec-diagnostics" \
+    --source-log "$TEST_TMP/crowdsec-error.log" \
+    --reproduce "./scripts/test-stack.sh --mode lite --level integration" \
+    > "$TEST_TMP/crowdsec-diagnose.out" 2>&1
+
+if grep -q 'Inspect CrowdSec acquisition and hub errors' \
+    "$TEST_TMP/crowdsec-diagnostics/next-steps.md"; then
+    pass "diagnostic classifier recommends CrowdSec acquisition checks"
+else
+    fail "diagnostic classifier recommends CrowdSec acquisition checks"
+fi
+
+cat > "$TEST_TMP/crowdsec-watcher-error.log" <<'EOF'
+failed to update hub: bad http code 403
+api server init: unable to run local API: authenticate watcher (shog): API error: Forbidden
+EOF
+
+"$PROJECT_DIR/scripts/diagnose.sh" \
+    --mode lite \
+    --reason "container is unhealthy" \
+    --command "./scripts/health-check.sh --mode lite" \
+    --exit-code 1 \
+    --output-dir "$TEST_TMP/crowdsec-watcher-diagnostics" \
+    --source-log "$TEST_TMP/crowdsec-watcher-error.log" \
+    --reproduce "./scripts/test-stack.sh --mode lite --level integration" \
+    > "$TEST_TMP/crowdsec-watcher-diagnose.out" 2>&1
+
+if grep -q 'local detection database and agent registration do not need to be deleted' \
+    "$TEST_TMP/crowdsec-watcher-diagnostics/next-steps.md"; then
+    pass "diagnostic classifier preserves CrowdSec state on central watcher mismatch"
+else
+    fail "diagnostic classifier preserves CrowdSec state on central watcher mismatch"
 fi
 
 printf '1..%d\n' "$((PASS + FAIL))"

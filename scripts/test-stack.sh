@@ -91,6 +91,7 @@ FAIL=0
 WARN=0
 LAST_FAILED_COMMAND=""
 STACK_TOUCHED=false
+DIAGNOSTICS_CAPTURED=false
 
 log() { printf '[%s] %s\n' "$(date -Iseconds 2>/dev/null || date)" "$*"; }
 
@@ -137,6 +138,21 @@ fi
 
 compose() {
     docker compose --env-file "$ENV_FILE" "${compose_args[@]}" "$@"
+}
+
+capture_failure_diagnostics() {
+    [[ "$FAIL" -gt 0 ]] || return 0
+    [[ "$DIAGNOSTICS_CAPTURED" == false ]] || return 0
+
+    "$SCRIPT_DIR/diagnose.sh" \
+        --reason "SHOG $LEVEL test run failed ($FAIL checks)" \
+        --command "${LAST_FAILED_COMMAND:-unknown}" \
+        --exit-code 1 \
+        --mode "$MODE" \
+        --source-log "$LOG_FILE" \
+        --output-dir "$RUN_DIR/diagnostics" \
+        --reproduce "$TEST_REPRODUCE" || true
+    DIAGNOSTICS_CAPTURED=true
 }
 
 cleanup_partial_stack() {
@@ -257,6 +273,11 @@ smoke_checks() {
         docker run --rm --user 0:0 --entrypoint rsyslogd \
         -v "$PROJECT_DIR/configs/rsyslog/rsyslog.conf:/etc/rsyslog.conf:ro" \
         rsyslog/rsyslog:2026-04 -N1 -f /etc/rsyslog.conf
+    run_check "CrowdSec acquisition validates in its pinned image" \
+        docker run --rm --entrypoint /bin/sh \
+        -v "$PROJECT_DIR/configs/crowdsec/acquis.yaml:/tmp/acquis.yaml:ro" \
+        crowdsecurity/crowdsec:v1.7.8 -c \
+        'mkdir -p /etc/crowdsec && cp -a /staging/etc/crowdsec/. /etc/crowdsec/ && cp /tmp/acquis.yaml /etc/crowdsec/acquis.yaml && if crowdsec -t -c /etc/crowdsec/config.yaml >/tmp/crowdsec-check.log 2>&1; then echo "CrowdSec configuration test passed"; else cat /tmp/crowdsec-check.log; exit 1; fi'
 }
 
 wait_for_health() {
@@ -323,11 +344,11 @@ integration_checks() {
     run_check "Unbound answers a recursive DNS query" docker exec shog-unbound drill @127.0.0.1 cloudflare.com
 
     if command -v curl >/dev/null 2>&1; then
-        run_check "Portainer API responds" curl -kfsS --max-time 10 https://127.0.0.1:9443/api/status
-        run_check "Uptime Kuma responds" curl -fsS --max-time 10 http://127.0.0.1:3001/
-        run_check "Pi-hole web responds" curl -fsS --max-time 10 http://127.0.0.1:8080/admin/
+        run_check "Portainer API responds" curl -kfsS --max-time 10 -o /dev/null https://127.0.0.1:9443/api/status
+        run_check "Uptime Kuma responds" curl -fsS --max-time 10 -o /dev/null http://127.0.0.1:3001/
+        run_check "Pi-hole web responds" curl -fsS --max-time 10 -o /dev/null http://127.0.0.1:8080/admin/
         if [[ "$MODE" == "full" ]]; then
-            run_check "Wazuh Dashboard responds" curl -kfsS --max-time 15 https://127.0.0.1:5601/
+            run_check "Wazuh Dashboard responds" curl -kfsS --max-time 15 -o /dev/null https://127.0.0.1:5601/
         fi
     else
         warn "curl unavailable; HTTP endpoint probes skipped"
@@ -337,6 +358,10 @@ integration_checks() {
     (cd "$PROJECT_DIR" && compose ps -a) > "$RUN_DIR/docker-compose-ps.txt" 2>&1 || true
     record_command docker stats --no-stream
     docker stats --no-stream > "$RUN_DIR/docker-stats.txt" 2>&1 || true
+
+    # Capture logs and container health before teardown. Collecting only after
+    # `compose down` produces an empty diagnostic bundle.
+    capture_failure_diagnostics
 
     if [[ "$KEEP_RUNNING" == false ]]; then
         record_command docker compose --env-file "$ENV_FILE" "${compose_args[@]}" down --remove-orphans
@@ -389,14 +414,7 @@ fi
 write_summary
 
 if [[ "$FAIL" -gt 0 ]]; then
-    "$SCRIPT_DIR/diagnose.sh" \
-        --reason "SHOG $LEVEL test run failed ($FAIL checks)" \
-        --command "${LAST_FAILED_COMMAND:-unknown}" \
-        --exit-code 1 \
-        --mode "$MODE" \
-        --source-log "$LOG_FILE" \
-        --output-dir "$RUN_DIR/diagnostics" \
-        --reproduce "$TEST_REPRODUCE" || true
+    capture_failure_diagnostics
     log "Result: FAIL — review $SUMMARY_FILE and $RUN_DIR/diagnostics/next-steps.md"
     exit 1
 fi

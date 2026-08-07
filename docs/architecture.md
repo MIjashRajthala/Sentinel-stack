@@ -144,14 +144,14 @@ flowchart LR
 | # | Component | Image | Version | Purpose | Data Volume |
 |---|-----------|-------|---------|---------|-------------|
 | 1 | unbound | mvance/unbound | 1.19.0 | Recursive DNS | unbound-data |
-| 2 | pihole | pihole/pihole | 2024.02.2 | DNS filtering | pihole-etc, pihole-dnsmasq |
+| 2 | pihole | pihole/pihole | 2026.05.0 | DNS filtering | pihole-etc, pihole-dnsmasq |
 | 3 | rsyslog | rsyslog/rsyslog | 2026-04 | Log receiver | rsyslog-data, rsyslog-spool |
-| 4 | crowdsec | crowdsecurity/crowdsec | v1.6.0 | Threat detection | crowdsec-config, crowdsec-data |
+| 4 | crowdsec | crowdsecurity/crowdsec | v1.7.8 | Threat detection | crowdsec-config, crowdsec-data |
 | 5 | crowdsec-bouncer | crowdsecurity/iptables-bouncer | v0.0.28 | IP blocking | crowdsec-bouncer-* |
 | 6 | wazuh-indexer | wazuh/wazuh-indexer | 4.7.2 | Search/Analytics | wazuh-indexer-data |
 | 7 | wazuh-manager | wazuh/wazuh-manager | 4.7.2 | SIEM engine | wazuh-manager-var-ossec |
 | 8 | wazuh-dashboard | wazuh/wazuh-dashboard | 4.7.2 | Web UI | wazuh-dashboard-data |
-| 9 | portainer | portainer/portainer-ce | 2.19.4 | Container mgmt | portainer-data |
+| 9 | portainer | portainer/portainer-ce | 2.39.2 | Container mgmt | portainer-data |
 | 10 | uptime-kuma | louislam/uptime-kuma | 2.3.2 | Monitoring | uptime-kuma-data |
 | 11 | filebeat | docker.elastic.co/beats/filebeat-oss | 8.11.4 | Log shipper | filebeat-data, filebeat-logs |
 | 12 | alerting | ghcr.io/containrrr/shoutrrr | 0.8.0 | Notifications | alerting-data |

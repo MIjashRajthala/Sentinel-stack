@@ -335,7 +335,7 @@ fi
 # 13. TIME SYNC
 # ---------------------------------------------------------------------------
 log_section "Time Synchronisation"
-if timedatectl status 2>/dev/null | grep -q "NTP enabled: yes"; then
+if timedatectl show 2>/dev/null | grep -Eq '^(NTP|NTPSynchronized)=yes$'; then
     log_pass "NTP time synchronisation enabled"
 else
     log_warn "NTP may not be enabled — accurate time is critical for SIEM correlation"

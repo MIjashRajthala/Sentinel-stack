@@ -152,6 +152,15 @@ write_next_steps() {
         elif grep -Eqi 'no space left|disk quota|filesystem.*full' "$evidence_file"; then
             echo "1. Inspect storage: \`df -h\` and \`docker system df -v\`."
             echo "2. Remove only confirmed-unused Docker data; do not prune volumes containing SHOG data."
+        elif grep -Eqi 'authenticate watcher.*forbidden|unable to run local api.*forbidden' "$evidence_file"; then
+            echo "1. Preserve both CrowdSec volumes; the local detection database and agent registration do not need to be deleted."
+            echo "2. Stop the login burst with \`docker compose stop crowdsec\` and fix any preceding configuration error."
+            echo "3. CrowdSec documents a one-hour temporary CAPI ban after repeated free-tier logins; wait at least one hour before retrying."
+            echo "4. Run \`docker compose up -d crowdsec\`, then verify once with \`docker exec shog-crowdsec cscli capi status\`."
+        elif grep -Eqi 'loading acquisition config|fileacquisition|failed to update hub|crowdsec.*acquis' "$evidence_file"; then
+            echo "1. Inspect CrowdSec acquisition and hub errors in \`docker-compose-logs.txt\`."
+            echo "2. Validate each acquisition uses a supported \`source\` and a mandatory \`labels.type\`."
+            echo "3. Verify the pinned CrowdSec release can reach its matching hub, then rerun the lite smoke test."
         elif grep -Eqi 'unbound\.conf.*error|could not read config file.*unbound|rsyslogd.*error during parsing|config.*syntax error' "$evidence_file"; then
             echo "1. Locate the first configuration error in \`docker-compose-logs.txt\` or \`source.log\`."
             echo "2. Run \`./scripts/test-stack.sh --mode lite --level smoke\` to validate the config inside its pinned image."

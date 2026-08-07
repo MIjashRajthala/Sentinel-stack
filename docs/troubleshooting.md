@@ -143,7 +143,7 @@ docker exec shog-pihole pihole status
 - Ensure `PIHOLE_DNS_BIND_IP` is a stable LAN address not used by another listener
 - Restart Pi-hole: `docker restart shog-pihole`
 - Check if Unbound is healthy (Pi-hole depends on it)
-- Verify `PIHOLE_DNS_` in `.env` points to Unbound IP
+- Verify `FTLCONF_dns_upstreams` in the resolved Compose configuration points to the Unbound IP
 
 ### CrowdSec bouncer not working
 
@@ -294,7 +294,7 @@ docker exec shog-pihole ls -lh /etc/pihole/*.db
 
 **Fixes**:
 - Run log rotation: `docker system prune --volumes` (WARNING: removes unused volumes)
-- Reduce Pi-hole `FTLCONF_MAXDBDAYS` in `.env`
+- Reduce `PIHOLE_MAXDB_DAYS` in `.env` (mapped to Pi-hole v6 `FTLCONF_database_maxDBdays`)
 - Enable automated cleanup cron job
 
 ### Slow Wazuh Dashboard queries
