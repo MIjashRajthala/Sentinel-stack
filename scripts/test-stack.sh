@@ -90,6 +90,7 @@ PASS=0
 FAIL=0
 WARN=0
 LAST_FAILED_COMMAND=""
+STACK_TOUCHED=false
 
 log() { printf '[%s] %s\n' "$(date -Iseconds 2>/dev/null || date)" "$*"; }
 
@@ -137,6 +138,24 @@ fi
 compose() {
     docker compose --env-file "$ENV_FILE" "${compose_args[@]}" "$@"
 }
+
+cleanup_partial_stack() {
+    local original_status=$?
+
+    if [[ "$STACK_TOUCHED" == true && "$KEEP_RUNNING" == false ]]; then
+        log "Cleaning up partially started test stack (volumes preserved)"
+        record_command docker compose --env-file "$ENV_FILE" "${compose_args[@]}" down --remove-orphans
+        if (cd "$PROJECT_DIR" && compose down --remove-orphans); then
+            log "Cleanup completed"
+        else
+            log "WARN: automatic cleanup failed; run: docker compose down --remove-orphans"
+        fi
+    fi
+
+    return "$original_status"
+}
+
+trap cleanup_partial_stack EXIT
 
 require_docker() {
     if ! command -v docker >/dev/null 2>&1; then
@@ -226,7 +245,18 @@ smoke_checks() {
         pass "Images pulled for $MODE mode"
     else
         fail "Image pull failed for $MODE mode" "docker compose pull"
+        return 0
     fi
+
+    run_check "Unbound configuration validates in its pinned image" \
+        docker run --rm --entrypoint /bin/sh \
+        -v "$PROJECT_DIR/configs/unbound/unbound.conf:/opt/unbound/etc/unbound/unbound.conf:ro" \
+        mvance/unbound:1.19.0 -c \
+        'mkdir -p /opt/unbound/etc/unbound/var && { /opt/unbound/sbin/unbound-anchor -a /opt/unbound/etc/unbound/var/root.key >/dev/null 2>&1 || test -s /opt/unbound/etc/unbound/var/root.key; } && /opt/unbound/sbin/unbound-checkconf /opt/unbound/etc/unbound/unbound.conf'
+    run_check "rsyslog configuration validates in its pinned image" \
+        docker run --rm --user 0:0 --entrypoint rsyslogd \
+        -v "$PROJECT_DIR/configs/rsyslog/rsyslog.conf:/etc/rsyslog.conf:ro" \
+        rsyslog/rsyslog:2026-04 -N1 -f /etc/rsyslog.conf
 }
 
 wait_for_health() {
@@ -279,6 +309,7 @@ integration_checks() {
     fi
 
     record_command docker compose --env-file "$ENV_FILE" "${compose_args[@]}" up -d --remove-orphans
+    STACK_TOUCHED=true
     if (cd "$PROJECT_DIR" && compose up -d --remove-orphans); then
         pass "Stack started in $MODE mode"
     else
@@ -289,7 +320,7 @@ integration_checks() {
     wait_for_health
 
     run_check "Pi-hole answers a DNS query" docker exec shog-pihole dig @127.0.0.1 cloudflare.com +short
-    run_check "Unbound answers a recursive DNS query" docker exec shog-unbound dig @127.0.0.1 cloudflare.com +short
+    run_check "Unbound answers a recursive DNS query" docker exec shog-unbound drill @127.0.0.1 cloudflare.com
 
     if command -v curl >/dev/null 2>&1; then
         run_check "Portainer API responds" curl -kfsS --max-time 10 https://127.0.0.1:9443/api/status
@@ -311,6 +342,7 @@ integration_checks() {
         record_command docker compose --env-file "$ENV_FILE" "${compose_args[@]}" down --remove-orphans
         if (cd "$PROJECT_DIR" && compose down --remove-orphans); then
             pass "Test stack stopped cleanly (volumes preserved)"
+            STACK_TOUCHED=false
         else
             fail "Test stack did not stop cleanly" "docker compose down --remove-orphans"
         fi

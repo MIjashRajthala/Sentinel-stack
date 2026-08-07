@@ -223,6 +223,29 @@ else
     fail "diagnostic classifier recommends image-tag verification"
 fi
 
+cat > "$TEST_TMP/config-error.log" <<'EOF'
+vm.max_map_count is not required in lite mode
+/opt/unbound/etc/unbound/unbound.conf:113: error: syntax error
+fatal error: Could not read config file: /opt/unbound/etc/unbound/unbound.conf
+EOF
+
+"$PROJECT_DIR/scripts/diagnose.sh" \
+    --mode lite \
+    --reason "container is unhealthy" \
+    --command "docker compose up -d" \
+    --exit-code 1 \
+    --output-dir "$TEST_TMP/config-diagnostics" \
+    --source-log "$TEST_TMP/config-error.log" \
+    --reproduce "./scripts/test-stack.sh --mode lite --level integration" \
+    > "$TEST_TMP/config-diagnose.out" 2>&1
+
+if grep -q './scripts/test-stack.sh --mode lite --level smoke' "$TEST_TMP/config-diagnostics/next-steps.md" && \
+   ! grep -q 'Set `vm.max_map_count=262144`' "$TEST_TMP/config-diagnostics/next-steps.md"; then
+    pass "diagnostic classifier prioritises configuration syntax errors"
+else
+    fail "diagnostic classifier prioritises configuration syntax errors"
+fi
+
 printf '1..%d\n' "$((PASS + FAIL))"
 printf '# passed=%d failed=%d\n' "$PASS" "$FAIL"
 [[ "$FAIL" -eq 0 ]]

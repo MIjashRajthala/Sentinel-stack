@@ -26,13 +26,17 @@ services:
     cap_drop:
       - ALL
     cap_add:
+      - CHOWN
+      - DAC_OVERRIDE
+      - MKNOD
       - NET_BIND_SERVICE
       - SETGID
       - SETUID
+      - SYS_CHROOT
     security_opt:
       - no-new-privileges:true
     healthcheck:
-      test: ["CMD-SHELL", "dig @127.0.0.1 -p 53 cloudflare.com || exit 1"]
+      test: ["CMD-SHELL", "drill @127.0.0.1 cloudflare.com >/dev/null 2>&1 || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 3

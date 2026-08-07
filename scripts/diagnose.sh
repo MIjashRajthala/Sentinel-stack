@@ -152,16 +152,20 @@ write_next_steps() {
         elif grep -Eqi 'no space left|disk quota|filesystem.*full' "$evidence_file"; then
             echo "1. Inspect storage: \`df -h\` and \`docker system df -v\`."
             echo "2. Remove only confirmed-unused Docker data; do not prune volumes containing SHOG data."
-        elif grep -Eqi 'max_map_count|virtual memory areas' "$evidence_file"; then
+        elif grep -Eqi 'unbound\.conf.*error|could not read config file.*unbound|rsyslogd.*error during parsing|config.*syntax error' "$evidence_file"; then
+            echo "1. Locate the first configuration error in \`docker-compose-logs.txt\` or \`source.log\`."
+            echo "2. Run \`./scripts/test-stack.sh --mode lite --level smoke\` to validate the config inside its pinned image."
+            echo "3. Rerun smoke tests before another deployment attempt."
+        elif grep -Eqi 'unhealthy|health check.*fail|starting.*timeout' "$evidence_file"; then
+            echo "1. Identify the unhealthy service in \`docker-compose-ps.txt\`."
+            echo "2. Inspect its section in \`docker-compose-logs.txt\`."
+            echo "3. Rerun \`./scripts/health-check.sh --mode $MODE --diagnose\`."
+        elif grep -Eqi 'max_map_count[^[:cntrl:]]*(too low|below|must be|at least|262144)|virtual memory areas.*(too low|increase)' "$evidence_file"; then
             echo "1. Set \`vm.max_map_count=262144\` in \`/etc/sysctl.d/99-shog.conf\`."
             echo "2. Apply it with \`sudo sysctl --system\`, then rerun the failed command."
         elif grep -Eqi 'exit(ed)? .*137|oom|out of memory|killed process' "$evidence_file"; then
             echo "1. Check memory pressure: \`free -h\` and \`docker stats --no-stream\`."
             echo "2. Retry with \`--mode lite\`, or lower \`WAZUH_INDEXER_HEAP\` only after reviewing Wazuh requirements."
-        elif grep -Eqi 'unhealthy|health check.*fail|starting.*timeout' "$evidence_file"; then
-            echo "1. Identify the unhealthy service in \`docker-compose-ps.txt\`."
-            echo "2. Inspect its section in \`docker-compose-logs.txt\`."
-            echo "3. Rerun \`./scripts/health-check.sh --mode $MODE --diagnose\`."
         elif grep -Eqi 'network.*overlap|pool overlaps|subnet.*conflict' "$evidence_file"; then
             echo "1. Review existing routes and Docker networks: \`ip route\` and \`docker network ls\`."
             echo "2. Change \`MGMT_SUBNET\`, \`SEC_SUBNET\`, or \`MON_SUBNET\` in \`.env\`."
