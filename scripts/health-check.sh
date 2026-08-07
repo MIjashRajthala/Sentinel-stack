@@ -7,6 +7,8 @@
 #   --watch    Continuous monitoring mode (refresh every 30s)
 #   --json     Output in JSON format
 #   --alert    Send alert if any service is unhealthy
+#   --mode     Expected service tier: lite or full
+#   --diagnose Create a diagnostic bundle on failure
 # =============================================================================
 set -euo pipefail
 
@@ -24,12 +26,21 @@ NC='\033[0m'
 WATCH=false
 JSON=false
 ALERT=false
+DIAGNOSE=false
+QUIET=false
+MODE="$(awk -F= '$1 == "SHOG_MODE" {print $2; exit}' "$PROJECT_DIR/.env" 2>/dev/null || true)"
+MODE="${MODE:-full}"
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
         --watch)  WATCH=true; shift ;;
         --json)   JSON=true;  shift ;;
         --alert)  ALERT=true; shift ;;
+        --diagnose) DIAGNOSE=true; shift ;;
+        --quiet) QUIET=true; shift ;;
+        --mode)
+            [[ $# -ge 2 ]] || { echo "--mode requires lite or full" >&2; exit 2; }
+            MODE="$2"; shift 2 ;;
         --help|-h)
             echo "Usage: ./scripts/health-check.sh [options]"
             echo ""
@@ -37,11 +48,19 @@ while [[ $# -gt 0 ]]; do
             echo "  --watch   Continuous monitoring mode (30s refresh)"
             echo "  --json    Output in JSON format"
             echo "  --alert   Send alert if services are unhealthy"
+            echo "  --mode    Expected services: lite or full (default: .env/full)"
+            echo "  --diagnose  Create a diagnostic bundle if unhealthy"
+            echo "  --quiet   Suppress the human-readable table"
             echo "  --help    Show this help"
             exit 0 ;;
         *) echo "Unknown option: $1"; exit 1 ;;
     esac
 done
+
+if [[ "$MODE" != "lite" && "$MODE" != "full" ]]; then
+    echo "Invalid mode: $MODE (expected lite or full)" >&2
+    exit 2
+fi
 
 # ============================================================================
 # HEALTH CHECK FUNCTIONS
@@ -64,20 +83,25 @@ check_all_services() {
     local results=()
     local all_healthy=true
 
-    # Core services
+    # Lightweight core services
     SERVICES=(
         "shog-unbound"
         "shog-pihole"
         "shog-rsyslog"
         "shog-crowdsec"
-        "shog-wazuh-indexer"
-        "shog-wazuh-manager"
-        "shog-wazuh-dashboard"
-        "shog-wazuh-agent"
         "shog-portainer"
         "shog-uptime-kuma"
-        "shog-filebeat"
     )
+
+    if [[ "$MODE" == "full" ]]; then
+        SERVICES+=(
+            "shog-wazuh-indexer"
+            "shog-wazuh-manager"
+            "shog-wazuh-dashboard"
+            "shog-wazuh-agent"
+            "shog-filebeat"
+        )
+    fi
 
     # Optional services
     if docker inspect shog-crowdsec-bouncer &>/dev/null; then
@@ -93,6 +117,7 @@ check_all_services() {
             "shog-opencti-elasticsearch"
             "shog-opencti-minio"
             "shog-opencti-rabbitmq"
+            "shog-opencti-connector-mitre"
         )
     fi
 
@@ -103,7 +128,7 @@ check_all_services() {
         health=$(echo "$result" | grep -o '"health":"[^"]*"' | cut -d'"' -f4)
         running=$(echo "$result" | grep -o '"running":[^,}]*' | cut -d: -f2)
 
-        if [[ "$running" != "true" ]] || [[ "$health" == "unhealthy" ]]; then
+        if [[ "$running" != "true" ]] || { [[ "$health" != "healthy" ]] && [[ "$health" != "none" ]]; }; then
             all_healthy=false
         fi
     done
@@ -111,7 +136,7 @@ check_all_services() {
     # Print results
     if [[ "$JSON" == true ]]; then
         printf '%s\n' "{\"timestamp\":\"$(date -Iseconds)\",\"services\":[$(IFS=,; echo "${results[*]}")],\"all_healthy\":$all_healthy}"
-    else
+    elif [[ "$QUIET" == false ]]; then
         printf "\n${BOLD}%-35s %-12s %-12s %s${NC}\n" "CONTAINER" "STATUS" "HEALTH" "RUNNING"
         printf "%.80s\n" "--------------------------------------------------------------------------------"
 
@@ -126,6 +151,8 @@ check_all_services() {
                 sc="${GREEN}"; hc="${GREEN}"; rc="${GREEN}"
             elif [[ "$running" == "true" && "$health" == "starting" ]]; then
                 sc="${YELLOW}"; hc="${YELLOW}"; rc="${GREEN}"
+            elif [[ "$running" == "true" && "$health" == "none" ]]; then
+                sc="${GREEN}"; hc="${YELLOW}"; rc="${GREEN}"
             elif [[ "$running" == "true" ]]; then
                 sc="${GREEN}"; hc="${RED}"; rc="${GREEN}"
             else
@@ -174,5 +201,15 @@ if [[ "$WATCH" == true ]]; then
         sleep 30
     done
 else
-    check_all_services || exit 1
+    if ! check_all_services; then
+        if [[ "$DIAGNOSE" == true ]]; then
+            "$SCRIPT_DIR/diagnose.sh" \
+                --reason "One or more expected services are unhealthy" \
+                --command "./scripts/health-check.sh --mode $MODE" \
+                --exit-code 1 \
+                --mode "$MODE" \
+                --reproduce "./scripts/health-check.sh --mode $MODE --diagnose" || true
+        fi
+        exit 1
+    fi
 fi

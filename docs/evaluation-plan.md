@@ -329,12 +329,13 @@ Rate each statement 1 (Strongly Disagree) to 5 (Strongly Agree):
 
 | Profile | CPU | RAM | Disk | Network | Use Case |
 |---------|-----|-----|------|---------|----------|
-| **Minimum** | 2 cores | 4 GB | 50 GB SSD | 1 Gbps | Solo developer, basic DNS + monitoring |
-| **Recommended** | 4 cores | 8 GB | 100 GB SSD | 1 Gbps | Small team, full SIEM, no OpenCTI |
+| **Lite minimum** | 2 cores | 2 GB | 20 GB SSD | 1 Gbps | DNS, logging, CrowdSec, and monitoring; no Wazuh |
+| **Lite recommended** | 2-4 cores | 4 GB | 40 GB SSD | 1 Gbps | Small low-volume home/office deployment; no Wazuh |
+| **Full recommended** | 4 cores | 8 GB | 100 GB SSD | 1 Gbps | Small team, full Wazuh SIEM, no OpenCTI |
 | **Advanced** | 6+ cores | 16 GB | 200 GB NVMe | 1 Gbps | Full stack + OpenCTI, long retention |
 | **Advanced+** | 8+ cores | 32 GB | 500 GB NVMe | 10 Gbps | Multiple VLANs, high throughput, Cluster |
 
-*Minimum profile excludes Wazuh (uses lightweight alternatives) or runs with reduced heap sizes.*
+*Lite mode excludes Wazuh and Filebeat instead of forcing unstable heap sizes. Validate the floor with three clean integration runs and a 24-hour workload test before production use.*
 
 ---
 

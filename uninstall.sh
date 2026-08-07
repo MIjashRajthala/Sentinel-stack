@@ -112,7 +112,7 @@ fi
 # ============================================================================
 echo ""
 echo -e "${BOLD}Stopping SHOG containers...${NC}"
-docker compose down --remove-orphans
+docker compose --profile "*" down --remove-orphans
 
 if [[ $? -eq 0 ]]; then
     echo -e "${GREEN}All containers stopped and removed.${NC}"

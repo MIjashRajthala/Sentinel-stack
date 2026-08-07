@@ -67,7 +67,7 @@ services:
       DNSSEC: "true"
       DNSMASQ_LISTENING: "local"
       FTLCONF_REPLY_ADDR4: ${PIHOLE_IP:-172.28.1.2}
-      FTLCONF_MAXDBDAYS: "90"
+      FTLCONF_MAXDBDAYS: "${PIHOLE_MAXDB_DAYS:-30}"
     volumes:
       - pihole-etc:/etc/pihole
       - pihole-dnsmasq:/etc/dnsmasq.d
@@ -222,6 +222,8 @@ services:
   wazuh-indexer:
     container_name: shog-wazuh-indexer
     image: wazuh/wazuh-indexer:4.7.2
+    profiles:
+      - siem
     restart: unless-stopped
     networks:
       security:
@@ -272,6 +274,8 @@ services:
   wazuh-manager:
     container_name: shog-wazuh-manager
     image: wazuh/wazuh-manager:4.7.2
+    profiles:
+      - siem
     restart: unless-stopped
     networks:
       security:
@@ -318,6 +322,8 @@ services:
   wazuh-dashboard:
     container_name: shog-wazuh-dashboard
     image: wazuh/wazuh-dashboard:4.7.2
+    profiles:
+      - siem
     restart: unless-stopped
     networks:
       security:
@@ -368,6 +374,8 @@ services:
   wazuh-agent:
     container_name: shog-wazuh-agent
     image: wazuh/wazuh-agent:4.7.2
+    profiles:
+      - siem
     restart: unless-stopped
     networks:
       security:
@@ -481,6 +489,8 @@ services:
   filebeat:
     container_name: shog-filebeat
     image: docker.elastic.co/beats/filebeat-oss:8.11.4
+    profiles:
+      - siem
     restart: unless-stopped
     networks:
       security:
@@ -828,68 +838,92 @@ networks:
 volumes:
   # Unbound
   unbound-data:
+    name: shog-unbound-data
     driver: local
 
   # Pi-hole
   pihole-etc:
+    name: shog-pihole-etc
     driver: local
   pihole-dnsmasq:
+    name: shog-pihole-dnsmasq
     driver: local
 
   # Rsyslog
   rsyslog-data:
+    name: shog-rsyslog-data
     driver: local
   rsyslog-spool:
+    name: shog-rsyslog-spool
     driver: local
 
   # CrowdSec
   crowdsec-config:
+    name: shog-crowdsec-config
     driver: local
   crowdsec-data:
+    name: shog-crowdsec-data
     driver: local
   crowdsec-bouncer-data:
+    name: shog-crowdsec-bouncer-data
     driver: local
   crowdsec-bouncer-logs:
+    name: shog-crowdsec-bouncer-logs
     driver: local
 
   # Wazuh
   wazuh-indexer-data:
+    name: shog-wazuh-indexer-data
     driver: local
   wazuh-manager-var-ossec:
+    name: shog-wazuh-manager-var-ossec
     driver: local
   wazuh-manager-etc:
+    name: shog-wazuh-manager-etc
     driver: local
   wazuh-dashboard-data:
+    name: shog-wazuh-dashboard-data
     driver: local
   wazuh-agent-var-ossec:
+    name: shog-wazuh-agent-var-ossec
     driver: local
 
   # Filebeat
   filebeat-data:
+    name: shog-filebeat-data
     driver: local
   filebeat-logs:
+    name: shog-filebeat-logs
     driver: local
 
   # Portainer
   portainer-data:
+    name: shog-portainer-data
     driver: local
 
   # Uptime Kuma
   uptime-kuma-data:
+    name: shog-uptime-kuma-data
     driver: local
 
   # Alerting
   alerting-data:
+    name: shog-alerting-data
     driver: local
 
   # OpenCTI
   opencti-data:
+    name: shog-opencti-data
     driver: local
   opencti-redis-data:
+    name: shog-opencti-redis-data
     driver: local
   opencti-es-data:
+    name: shog-opencti-es-data
     driver: local
   opencti-minio-data:
+    name: shog-opencti-minio-data
     driver: local
   opencti-rabbitmq-data:
+    name: shog-opencti-rabbitmq-data
     driver: local

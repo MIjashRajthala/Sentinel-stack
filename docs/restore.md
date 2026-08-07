@@ -69,28 +69,30 @@ curl -fsSL https://get.docker.com | sudo sh
 sudo apt install docker-compose-plugin
 
 # 2. Clone SHOG repository
-git clone https://github.com/your-org/shog.git /opt/shog
+git clone https://github.com/MIjashRajthala/Sentinel-stack.git /opt/shog
 cd /opt/shog
 
 # 3. Restore .env
 cp /path/to/backup/shog-backup-YYYYMMDD_HHMMSS/configs/env.backup .env
 chmod 600 .env
 
-# 4. Restore configs
-cp -r /path/to/backup/shog-backup-YYYYMMDD_HHMMSS/configs/* configs/
+# 4. Restore service configs
+cp -R /path/to/backup/shog-backup-YYYYMMDD_HHMMSS/configs/configs/. configs/
 
-# 5. Pull images
-docker compose pull
-
-# 6. Create volumes (empty)
-docker compose up -d
-
-# 7. Stop all services
-docker compose stop
-
-# 8. Restore all volumes
+# 5. Rebuild the enabled profile list
 BACKUP_DIR="/path/to/backup/shog-backup-YYYYMMDD_HHMMSS"
+MODE=$(awk -F= '$1 == "SHOG_MODE" {print $2; exit}' .env)
+MODE=${MODE:-full}
+PROFILE_ARGS=()
+[[ "$MODE" == "full" ]] && PROFILE_ARGS+=(--profile siem)
+compgen -G "$BACKUP_DIR/opencti-*.tar.gz" >/dev/null && PROFILE_ARGS+=(--profile opencti)
+compgen -G "$BACKUP_DIR/alerting-*.tar.gz" >/dev/null && PROFILE_ARGS+=(--profile alerting)
+compgen -G "$BACKUP_DIR/crowdsec-bouncer-*.tar.gz" >/dev/null && PROFILE_ARGS+=(--profile host-bouncer)
 
+# 6. Pull only the selected deployment images
+docker compose "${PROFILE_ARGS[@]}" pull
+
+# 7. Restore all volumes
 for archive in "$BACKUP_DIR"/*.tar.gz; do
     # Extract volume name from filename
     vol_label=$(basename "$archive" | sed 's/-[0-9]*_.*\.tar\.gz//')
@@ -104,12 +106,18 @@ for archive in "$BACKUP_DIR"/*.tar.gz; do
         "rsyslog-spool")   VOL="shog-rsyslog-spool" ;;
         "crowdsec-config") VOL="shog-crowdsec-config" ;;
         "crowdsec-data")   VOL="shog-crowdsec-data" ;;
+        "crowdsec-bouncer-data") VOL="shog-crowdsec-bouncer-data" ;;
+        "crowdsec-bouncer-logs") VOL="shog-crowdsec-bouncer-logs" ;;
         "wazuh-indexer")   VOL="shog-wazuh-indexer-data" ;;
         "wazuh-manager")   VOL="shog-wazuh-manager-var-ossec" ;;
+        "wazuh-manager-etc") VOL="shog-wazuh-manager-etc" ;;
         "wazuh-dashboard") VOL="shog-wazuh-dashboard-data" ;;
         "wazuh-agent")     VOL="shog-wazuh-agent-var-ossec" ;;
+        "filebeat-data")   VOL="shog-filebeat-data" ;;
+        "filebeat-logs")   VOL="shog-filebeat-logs" ;;
         "portainer")       VOL="shog-portainer-data" ;;
         "uptime-kuma")     VOL="shog-uptime-kuma-data" ;;
+        "alerting")        VOL="shog-alerting-data" ;;
         "opencti")         VOL="shog-opencti-data" ;;
         "opencti-redis")   VOL="shog-opencti-redis-data" ;;
         "opencti-elasticsearch") VOL="shog-opencti-es-data" ;;
@@ -119,15 +127,16 @@ for archive in "$BACKUP_DIR"/*.tar.gz; do
     esac
 
     echo "Restoring $vol_label -> $VOL..."
+    docker volume create "$VOL" >/dev/null
     docker run --rm -v "$VOL:/volume" -v "$BACKUP_DIR:/backup" \
         alpine sh -c "cd /volume && tar xzf /backup/$(basename "$archive")"
 done
 
-# 9. Start all services
-docker compose up -d
+# 8. Start the restored deployment
+docker compose "${PROFILE_ARGS[@]}" up -d
 
-# 10. Verify health
-./scripts/health-check.sh
+# 9. Verify health
+./scripts/health-check.sh --mode "$MODE" --diagnose
 ```
 
 ### Type 4: Selective Point-in-Time Restore
@@ -193,7 +202,8 @@ If restoring to a host with different IP addresses:
 
 ```bash
 # 1. All containers running
-./scripts/health-check.sh
+MODE=$(awk -F= '$1 == "SHOG_MODE" {print $2; exit}' .env)
+./scripts/health-check.sh --mode "${MODE:-full}" --diagnose
 
 # 2. DNS resolution works
 dig @$(grep PIHOLE_IP .env | cut -d= -f2) google.com

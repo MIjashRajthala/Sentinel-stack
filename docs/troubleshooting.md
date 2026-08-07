@@ -4,13 +4,26 @@
 
 Run the health check first:
 ```bash
-./scripts/health-check.sh
+./scripts/health-check.sh --mode full --diagnose
 ```
 
 For continuous monitoring:
 ```bash
 ./scripts/health-check.sh --watch
 ```
+
+Run the repeatable test harness when the failure needs to be reproduced:
+
+```bash
+./scripts/test-stack.sh --mode lite --level static
+./scripts/test-stack.sh --mode full --level integration
+```
+
+Installer transcripts are saved under `logs/install/`. Failed tests are saved
+under `logs/test-runs/` with exact commands and a `diagnostics/next-steps.md`
+file. Diagnostic copies of `.env` redact password, token, key, and secret fields,
+and Compose config is captured without interpolation. Review raw service logs
+before sharing a bundle because applications can print sensitive data.
 
 ---
 

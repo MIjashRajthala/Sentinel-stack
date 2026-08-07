@@ -20,6 +20,31 @@ BOLD='\033[1m'
 PASS=0
 WARN=0
 FAIL=0
+MODE="full"
+
+usage() {
+    cat <<'EOF'
+Usage: ./scripts/preflight-check.sh [--mode lite|full]
+
+  lite  DNS filtering, logging, CrowdSec, Portainer, and Uptime Kuma
+  full  Lite services plus Wazuh SIEM and Filebeat (default)
+EOF
+}
+
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --mode)
+            [[ $# -ge 2 ]] || { echo "--mode requires lite or full" >&2; exit 2; }
+            MODE="$2"; shift 2 ;;
+        --help|-h) usage; exit 0 ;;
+        *) echo "Unknown option: $1" >&2; usage >&2; exit 2 ;;
+    esac
+done
+
+if [[ "$MODE" != "lite" && "$MODE" != "full" ]]; then
+    echo "Invalid mode: $MODE (expected lite or full)" >&2
+    exit 2
+fi
 
 log_pass() { echo -e "${GREEN}[PASS]${NC} $1"; ((++PASS)); }
 log_warn() { echo -e "${YELLOW}[WARN]${NC} $1"; ((++WARN)); }
@@ -63,12 +88,16 @@ fi
 # ---------------------------------------------------------------------------
 log_section "CPU Resources"
 CPU_COUNT=$(nproc)
-if [[ "$CPU_COUNT" -ge 4 ]]; then
-    log_pass "$CPU_COUNT vCPUs (minimum 4 recommended)"
-elif [[ "$CPU_COUNT" -ge 2 ]]; then
-    log_warn "$CPU_COUNT vCPUs (4+ recommended for full stack)"
+if [[ "$MODE" == "lite" && "$CPU_COUNT" -ge 2 ]]; then
+    log_pass "$CPU_COUNT vCPUs (2+ recommended for lite mode)"
+elif [[ "$MODE" == "lite" && "$CPU_COUNT" -ge 1 ]]; then
+    log_warn "$CPU_COUNT vCPU (2 recommended for lite mode)"
+elif [[ "$MODE" == "full" && "$CPU_COUNT" -ge 4 ]]; then
+    log_pass "$CPU_COUNT vCPUs (4+ recommended for full mode)"
+elif [[ "$MODE" == "full" && "$CPU_COUNT" -ge 2 ]]; then
+    log_warn "$CPU_COUNT vCPUs (4+ recommended for full mode)"
 else
-    log_fail "$CPU_COUNT vCPUs (minimum 2 required, 4+ recommended)"
+    log_fail "$CPU_COUNT vCPUs is below the minimum for $MODE mode"
 fi
 
 # ---------------------------------------------------------------------------
@@ -76,15 +105,18 @@ fi
 # ---------------------------------------------------------------------------
 log_section "Memory Resources"
 TOTAL_RAM_KB=$(grep MemTotal /proc/meminfo | awk '{print $2}')
-TOTAL_RAM_GB=$((TOTAL_RAM_KB / 1024 / 1024))
-if [[ "$TOTAL_RAM_GB" -ge 16 ]]; then
-    log_pass "${TOTAL_RAM_GB} GB RAM (16+ GB recommended for full stack)"
-elif [[ "$TOTAL_RAM_GB" -ge 8 ]]; then
-    log_warn "${TOTAL_RAM_GB} GB RAM (16 GB recommended; OpenCTI disabled by default)"
-elif [[ "$TOTAL_RAM_GB" -ge 4 ]]; then
-    log_warn "${TOTAL_RAM_GB} GB RAM (8+ GB strongly recommended; some features may be slow)"
+TOTAL_RAM_MB=$((TOTAL_RAM_KB / 1024))
+TOTAL_RAM_GB=$((TOTAL_RAM_MB / 1024))
+if [[ "$MODE" == "lite" && "$TOTAL_RAM_MB" -ge 4096 ]]; then
+    log_pass "${TOTAL_RAM_GB} GB RAM (4+ GB recommended for lite mode)"
+elif [[ "$MODE" == "lite" && "$TOTAL_RAM_MB" -ge 2048 ]]; then
+    log_warn "${TOTAL_RAM_GB} GB RAM (2 GB minimum; 4 GB recommended for lite mode)"
+elif [[ "$MODE" == "full" && "$TOTAL_RAM_MB" -ge 8192 ]]; then
+    log_pass "${TOTAL_RAM_GB} GB RAM (8+ GB recommended for full mode)"
+elif [[ "$MODE" == "full" && "$TOTAL_RAM_MB" -ge 4096 ]]; then
+    log_warn "${TOTAL_RAM_GB} GB RAM (4 GB minimum; 8+ GB recommended for full mode)"
 else
-    log_fail "${TOTAL_RAM_GB} GB RAM (minimum 4 GB required, 8+ GB recommended)"
+    log_fail "${TOTAL_RAM_GB} GB RAM is below the minimum for $MODE mode"
 fi
 
 # ---------------------------------------------------------------------------
@@ -92,12 +124,16 @@ fi
 # ---------------------------------------------------------------------------
 log_section "Disk Resources"
 DISK_AVAIL_GB=$(df -BG "$PROJECT_DIR" | tail -1 | awk '{print $4}' | tr -d 'G')
-if [[ "$DISK_AVAIL_GB" -ge 100 ]]; then
-    log_pass "${DISK_AVAIL_GB} GB available (100+ GB recommended)"
-elif [[ "$DISK_AVAIL_GB" -ge 50 ]]; then
-    log_warn "${DISK_AVAIL_GB} GB available (100+ GB recommended for log retention)"
+if [[ "$MODE" == "lite" && "$DISK_AVAIL_GB" -ge 40 ]]; then
+    log_pass "${DISK_AVAIL_GB} GB available (40+ GB recommended for lite mode)"
+elif [[ "$MODE" == "lite" && "$DISK_AVAIL_GB" -ge 20 ]]; then
+    log_warn "${DISK_AVAIL_GB} GB available (20 GB minimum; shorten retention)"
+elif [[ "$MODE" == "full" && "$DISK_AVAIL_GB" -ge 100 ]]; then
+    log_pass "${DISK_AVAIL_GB} GB available (100+ GB recommended for full mode)"
+elif [[ "$MODE" == "full" && "$DISK_AVAIL_GB" -ge 50 ]]; then
+    log_warn "${DISK_AVAIL_GB} GB available (50 GB minimum; 100+ GB recommended)"
 else
-    log_fail "${DISK_AVAIL_GB} GB available (minimum 50 GB required)"
+    log_fail "${DISK_AVAIL_GB} GB available is below the minimum for $MODE mode"
 fi
 
 # ---------------------------------------------------------------------------
@@ -132,9 +168,11 @@ fi
 # ---------------------------------------------------------------------------
 log_section "Kernel Settings"
 
-# vm.max_map_count for Wazuh Indexer / Elasticsearch
+# vm.max_map_count is only required by the Wazuh/OpenSearch tier.
 CURRENT_MAX_MAP=$(sysctl -n vm.max_map_count 2>/dev/null || echo 0)
-if [[ "$CURRENT_MAX_MAP" -ge 262144 ]]; then
+if [[ "$MODE" == "lite" ]]; then
+    log_pass "vm.max_map_count is not required in lite mode"
+elif [[ "$CURRENT_MAX_MAP" -ge 262144 ]]; then
     log_pass "vm.max_map_count = $CURRENT_MAX_MAP (>= 262144)"
 else
     log_warn "vm.max_map_count = $CURRENT_MAX_MAP (set to 262144 for Wazuh Indexer)"
@@ -187,11 +225,13 @@ else
     log_pass "Port 514 (rsyslog) available"
 fi
 
-# Wazuh Dashboard
-if ss -tln | grep -q ':5601 '; then
-    log_fail "Port 5601 (Wazuh Dashboard) already in use"
-else
-    log_pass "Port 5601 (Wazuh Dashboard) available"
+# Wazuh Dashboard (full mode only)
+if [[ "$MODE" == "full" ]]; then
+    if ss -tln | grep -q ':5601 '; then
+        log_fail "Port 5601 (Wazuh Dashboard) already in use"
+    else
+        log_pass "Port 5601 (Wazuh Dashboard) available"
+    fi
 fi
 
 # Portainer
@@ -287,6 +327,7 @@ fi
 echo -e "\n${BOLD}========================================${NC}"
 echo -e "${BOLD}  Preflight Check Summary${NC}"
 echo -e "${BOLD}========================================${NC}"
+echo -e "  Mode:    $MODE"
 echo -e "  ${GREEN}Passed:  $PASS${NC}"
 echo -e "  ${YELLOW}Warnings: $WARN${NC}"
 echo -e "  ${RED}Failed:  $FAIL${NC}"

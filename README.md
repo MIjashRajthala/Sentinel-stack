@@ -44,24 +44,30 @@ flowchart TB
 
 ## Quick Start
 
-### Prerequisites
+### Deployment modes
 
-| Resource | Minimum | Recommended | Advanced |
-|----------|---------|-------------|----------|
-| CPU | 2 cores | 4 cores | 6+ cores |
-| RAM | 4 GB | 8 GB | 16+ GB |
-| Disk | 50 GB SSD | 100 GB SSD | 200 GB+ NVMe |
-| Network | 1 NIC | 2 NICs (pfSense) | Managed switch + VLANs |
-| OS | Ubuntu 22.04 LTS | Ubuntu 24.04 LTS | Ubuntu 24.04 LTS |
+| Mode | CPU | RAM | Disk | Services |
+|------|-----|-----|------|----------|
+| **Lite minimum** | 2 cores | 2 GB | 20 GB SSD | DNS, logging, CrowdSec, Portainer, Uptime Kuma |
+| **Lite recommended** | 2–4 cores | 4 GB | 40 GB SSD | Lite services with more retention/headroom |
+| **Full recommended** | 4 cores | 8 GB | 100 GB SSD | Lite services plus Wazuh SIEM and Filebeat |
+| **Advanced** | 6+ cores | 16+ GB | 200 GB+ NVMe | Full mode plus optional OpenCTI |
+
+Ubuntu 22.04 or 24.04 LTS is recommended. The lite floor must still be verified
+against your DNS volume and log retention before production use.
 
 ### One-Command Install
 
 ```bash
 # 1. Clone the repository
-git clone https://github.com/your-org/shog.git && cd shog
+git clone https://github.com/MIjashRajthala/Sentinel-stack.git
+cd Sentinel-stack
 
-# 2. Run the installer
-./install.sh
+# 2a. Full deployment (default; includes Wazuh)
+./install.sh --mode full
+
+# OR 2b. Low-resource deployment (without Wazuh/Filebeat)
+./install.sh --mode lite
 ```
 
 The installer will:
@@ -70,15 +76,32 @@ The installer will:
 - Generate strong random secrets
 - Pull all container images
 - Start the stack and verify health
+- Save a transcript under `logs/install/`
+- Capture redacted diagnostics and suggested next steps if installation fails
 
 ### Post-Install
 
 1. **Configure pfSense** using the guide at [`docs/pfsense-setup.md`](docs/pfsense-setup.md)
 2. **Access dashboards** (from management subnet only):
    - Portainer: `https://MANAGEMENT_IP:9443`
-   - Wazuh: `https://MANAGEMENT_IP:5601`
+   - Wazuh (full mode): `https://MANAGEMENT_IP:5601`
    - Uptime Kuma: `http://MANAGEMENT_IP:3001`
    - Pi-hole: `http://MANAGEMENT_IP:8080/admin`
+
+### Test before production
+
+```bash
+# Fast, non-deploying checks
+./scripts/test-stack.sh --mode lite --level static
+./scripts/test-stack.sh --mode full --level static
+
+# Disposable-host deployment test
+./scripts/test-stack.sh --mode lite --level integration
+```
+
+Each run records a transcript, exact commands, a summary, and—on failure—a
+diagnostic bundle with classified next steps and a reproduction command. See
+[`docs/testing.md`](docs/testing.md).
 
 ---
 
@@ -120,6 +143,7 @@ The installer will:
 
 | Profile | Command | Description |
 |---------|---------|-------------|
+| `siem` | `docker compose --profile siem up -d` | Wazuh and Filebeat; activated by `--mode full` |
 | `alerting` | `docker compose --profile alerting up -d` | Discord/Slack/email alerts |
 | `opencti` | `docker compose --profile opencti up -d` | Threat intel platform (8GB+ extra RAM) |
 | `host-bouncer` | `docker compose --profile host-bouncer up -d` | CrowdSec iptables bouncer on host |
@@ -145,17 +169,20 @@ shog/
 │   ├── preflight-check.sh          # System validation
 │   ├── generate-secrets.sh         # Secret generation
 │   ├── backup.sh                   # Backup all data
-│   └── health-check.sh             # Service health monitor
+│   ├── health-check.sh             # Service health monitor
+│   ├── diagnose.sh                 # Redacted diagnostic bundle collector
+│   └── test-stack.sh               # Static/smoke/integration tests
 ├── docs/
 │   ├── architecture.md             # Architecture & Mermaid diagrams
 │   ├── pfsense-setup.md            # pfSense configuration
 │   ├── threat-model.md             # Threat model & controls
 │   ├── evaluation-plan.md          # Testing & metrics
+│   ├── testing.md                  # Automated test and reproduction guide
 │   ├── security-hardening.md       # Hardening guide
 │   ├── troubleshooting.md          # Common issues
 │   └── restore.md                  # Restore procedures
-└── logs/                           # Runtime logs (created)
-    └── backups/                    # Backups (created)
+├── backups/                        # Backups (created)
+└── logs/                           # Test, install, and diagnostic artifacts
 ```
 
 ---
@@ -168,6 +195,7 @@ shog/
 | [`docs/pfsense-setup.md`](docs/pfsense-setup.md) | pfSense WAN/LAN/VLAN, DHCP, DNS, Suricata, WireGuard |
 | [`docs/threat-model.md`](docs/threat-model.md) | Assets, threat actors, attack paths, controls, residual risk |
 | [`docs/evaluation-plan.md`](docs/evaluation-plan.md) | Testing plan, metrics, SUS questionnaire |
+| [`docs/testing.md`](docs/testing.md) | Automated tests, diagnostics, and resource-validation protocol |
 | [`docs/security-hardening.md`](docs/security-hardening.md) | Additional hardening beyond defaults |
 | [`docs/troubleshooting.md`](docs/troubleshooting.md) | Common problems and solutions |
 | [`docs/restore.md`](docs/restore.md) | Disaster recovery procedures |
