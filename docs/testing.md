@@ -43,7 +43,7 @@ Use `--keep-running` when you want to inspect the test deployment manually.
 | Mode | Included services | Starting point |
 |---|---|---|
 | `lite` | Unbound, Pi-hole, rsyslog, CrowdSec, Portainer, Uptime Kuma | 2 vCPU, 2 GB RAM, 20 GB disk |
-| `full` | Lite mode plus Wazuh Indexer, Manager, Dashboard, Agent, and Filebeat | 4 vCPU, 8 GB RAM, 50–100 GB disk |
+| `full` | Lite mode plus Wazuh Indexer, Manager, Dashboard, and Filebeat | 4 vCPU, 8 GB RAM, 50–100 GB disk |
 
 The lite numbers are a testable floor, not a universal guarantee. DNS volume,
 log ingestion, retention, and host workload can require more. Record actual

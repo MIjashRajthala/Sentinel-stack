@@ -112,7 +112,6 @@ for archive in "$BACKUP_DIR"/*.tar.gz; do
         "wazuh-manager")   VOL="shog-wazuh-manager-var-ossec" ;;
         "wazuh-manager-etc") VOL="shog-wazuh-manager-etc" ;;
         "wazuh-dashboard") VOL="shog-wazuh-dashboard-data" ;;
-        "wazuh-agent")     VOL="shog-wazuh-agent-var-ossec" ;;
         "filebeat-data")   VOL="shog-filebeat-data" ;;
         "filebeat-logs")   VOL="shog-filebeat-logs" ;;
         "portainer")       VOL="shog-portainer-data" ;;

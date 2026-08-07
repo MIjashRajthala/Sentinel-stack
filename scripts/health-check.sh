@@ -98,7 +98,6 @@ check_all_services() {
             "shog-wazuh-indexer"
             "shog-wazuh-manager"
             "shog-wazuh-dashboard"
-            "shog-wazuh-agent"
             "shog-filebeat"
         )
     fi

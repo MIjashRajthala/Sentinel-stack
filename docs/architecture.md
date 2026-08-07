@@ -79,7 +79,7 @@ flowchart TB
     end
 
     subgraph security["Security — 172.28.1.0/24"]
-        security_services["Pi-hole — .2<br/>Unbound — .3<br/>rsyslog — .4<br/>CrowdSec — .5<br/>Wazuh Indexer — .10<br/>Wazuh Manager — .11<br/>Wazuh Dashboard — .12<br/>Wazuh Agent — .13<br/>Filebeat — .15<br/>OpenCTI — .20+"]
+        security_services["Pi-hole — .2<br/>Unbound — .3<br/>rsyslog — .4<br/>CrowdSec — .5<br/>Wazuh Indexer — .10<br/>Wazuh Manager — .11<br/>Wazuh Dashboard — .12<br/>Filebeat — .15<br/>OpenCTI — .20+"]
     end
 
     subgraph monitoring["Monitoring — 172.29.1.0/24<br/>(no external gateway)"]
@@ -115,10 +115,11 @@ flowchart LR
         indexer["Wazuh Indexer<br/>:9200"]
         manager["Wazuh Manager"]
         dashboard["Wazuh Dashboard<br/>:5601"]
-        agent["Wazuh Agent"]
         crowdsec["CrowdSec"]
         bouncer["CrowdSec Bouncer<br/>(iptables)"]
     end
+
+    nativeagent["Native Wazuh Agent<br/>(optional host install)"]
 
     device -->|"(1) DNS query"| pihole
     pihole -->|"(2) Recursive query"| unbound
@@ -131,8 +132,8 @@ flowchart LR
     suricata -->|"(8) EVE JSON via syslog"| manager
     manager -->|"(9) Alerts"| dashboard
 
-    hostfs -->|"(10) Audit / FIM"| agent
-    agent -->|"(11) Forward"| manager
+    hostfs -->|"(10) Audit / FIM"| nativeagent
+    nativeagent -->|"(11) Forward"| manager
 
     containerlogs -->|"(12) Docker API — read-only"| crowdsec
     crowdsec -->|"(13) Decision"| bouncer
@@ -144,20 +145,19 @@ flowchart LR
 |---|-----------|-------|---------|---------|-------------|
 | 1 | unbound | mvance/unbound | 1.19.0 | Recursive DNS | unbound-data |
 | 2 | pihole | pihole/pihole | 2024.02.2 | DNS filtering | pihole-etc, pihole-dnsmasq |
-| 3 | rsyslog | rsyslog/syslog_appliance_alpine | 8.2310.0 | Log receiver | rsyslog-data, rsyslog-spool |
+| 3 | rsyslog | rsyslog/rsyslog | 2026-04 | Log receiver | rsyslog-data, rsyslog-spool |
 | 4 | crowdsec | crowdsecurity/crowdsec | v1.6.0 | Threat detection | crowdsec-config, crowdsec-data |
 | 5 | crowdsec-bouncer | crowdsecurity/iptables-bouncer | v0.0.28 | IP blocking | crowdsec-bouncer-* |
 | 6 | wazuh-indexer | wazuh/wazuh-indexer | 4.7.2 | Search/Analytics | wazuh-indexer-data |
 | 7 | wazuh-manager | wazuh/wazuh-manager | 4.7.2 | SIEM engine | wazuh-manager-var-ossec |
 | 8 | wazuh-dashboard | wazuh/wazuh-dashboard | 4.7.2 | Web UI | wazuh-dashboard-data |
-| 9 | wazuh-agent | wazuh/wazuh-agent | 4.7.2 | Host telemetry | wazuh-agent-var-ossec |
-| 10 | portainer | portainer/portainer-ce | 2.19.4 | Container mgmt | portainer-data |
-| 11 | uptime-kuma | louislam/uptime-kuma | 2.3.2 | Monitoring | uptime-kuma-data |
-| 12 | filebeat | docker.elastic.co/beats/filebeat-oss | 8.11.4 | Log shipper | filebeat-data, filebeat-logs |
-| 13 | alerting | ghcr.io/containrrr/shoutrrr | 0.8.0 | Notifications | alerting-data |
-| 14 | opencti-platform | opencti/platform | 6.0.0 | Threat intel | opencti-data |
-| 15 | opencti-redis | redis | 7.2.4-alpine | Cache | opencti-redis-data |
-| 16 | opencti-elasticsearch | docker.elastic.co/elasticsearch/elasticsearch | 8.11.4 | Search | opencti-es-data |
+| 9 | portainer | portainer/portainer-ce | 2.19.4 | Container mgmt | portainer-data |
+| 10 | uptime-kuma | louislam/uptime-kuma | 2.3.2 | Monitoring | uptime-kuma-data |
+| 11 | filebeat | docker.elastic.co/beats/filebeat-oss | 8.11.4 | Log shipper | filebeat-data, filebeat-logs |
+| 12 | alerting | ghcr.io/containrrr/shoutrrr | 0.8.0 | Notifications | alerting-data |
+| 13 | opencti-platform | opencti/platform | 6.0.0 | Threat intel | opencti-data |
+| 14 | opencti-redis | redis | 7.2.4-alpine | Cache | opencti-redis-data |
+| 15 | opencti-elasticsearch | docker.elastic.co/elasticsearch/elasticsearch | 8.11.4 | Search | opencti-es-data |
 | 17 | opencti-minio | minio/minio | RELEASE.2024-01 | Object store | opencti-minio-data |
 | 18 | opencti-rabbitmq | rabbitmq | 3.12.13-mgmt-alpine | Message queue | opencti-rabbitmq-data |
 

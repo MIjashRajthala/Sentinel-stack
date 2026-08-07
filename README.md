@@ -32,13 +32,15 @@ flowchart TB
         direction TB
         dockerIngress["Docker Engine / Container Networks"]
         adminServices["Management<br/>Portainer CE :9443 · Uptime Kuma :3001"]
-        securityServices["Security and SIEM<br/>Wazuh Stack :5601 · Wazuh Agent<br/>Pi-hole DNS :53 · Unbound<br/>CrowdSec · rsyslog"]
+        securityServices["Security and SIEM<br/>Wazuh Stack :5601<br/>Pi-hole DNS :53 · Unbound<br/>CrowdSec · rsyslog"]
         dockerIngress --> adminServices
         dockerIngress --> securityServices
     end
 ```
 
-**Key principle**: pfSense is the network gateway and stays **outside Docker**. All other services run as containers on an Ubuntu Docker host behind pfSense.
+**Key principle**: pfSense is the network gateway and stays **outside Docker**.
+SHOG services run as containers on an Ubuntu host behind pfSense; install a
+native Wazuh agent separately when direct Docker-host telemetry is required.
 
 ---
 
@@ -114,7 +116,7 @@ diagnostic bundle with classified next steps and a reproduction command. See
 | **Pi-hole** | DNS filtering, ad/tracker blocking | Security |
 | **Unbound** | Recursive DNS resolver (root servers) | Security |
 | **Wazuh** | SIEM: Manager + Indexer + Dashboard | Security |
-| **Wazuh Agent** | Host telemetry (Docker host) | Security |
+| **Wazuh Agent** *(host opt.)* | Native host telemetry; install separately | Physical/VM |
 | **rsyslog** | Central syslog receiver (pfSense/Suricata) | Security |
 | **Filebeat** | Log shipper to Wazuh Indexer | Security |
 | **CrowdSec** | Behavioural threat detection + bouncer | Security |

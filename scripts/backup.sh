@@ -134,7 +134,6 @@ if [[ "$BACKUP_VOLUMES" == true ]]; then
         "shog-wazuh-manager-var-ossec:wazuh-manager"
         "shog-wazuh-manager-etc:wazuh-manager-etc"
         "shog-wazuh-dashboard-data:wazuh-dashboard"
-        "shog-wazuh-agent-var-ossec:wazuh-agent"
         "shog-filebeat-data:filebeat-data"
         "shog-filebeat-logs:filebeat-logs"
         "shog-portainer-data:portainer"

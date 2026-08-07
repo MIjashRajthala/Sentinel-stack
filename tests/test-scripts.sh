@@ -53,13 +53,13 @@ for volume_name in "${volume_names[@]}"; do
     grep -Fq "\"$volume_name\"" "$PROJECT_DIR/uninstall.sh" || missing_uninstall+=("$volume_name")
 done
 
-if [[ "${#volume_names[@]}" -eq 24 && "${#missing_backup[@]}" -eq 0 ]]; then
+if [[ "${#volume_names[@]}" -eq 23 && "${#missing_backup[@]}" -eq 0 ]]; then
     pass "backup script covers every persistent volume"
 else
     fail "backup script covers every persistent volume (missing: ${missing_backup[*]:-volume count mismatch})"
 fi
 
-if [[ "${#volume_names[@]}" -eq 24 && "${#missing_uninstall[@]}" -eq 0 ]]; then
+if [[ "${#volume_names[@]}" -eq 23 && "${#missing_uninstall[@]}" -eq 0 ]]; then
     pass "uninstall script covers every persistent volume"
 else
     fail "uninstall script covers every persistent volume (missing: ${missing_uninstall[*]:-volume count mismatch})"

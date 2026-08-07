@@ -55,14 +55,6 @@ services:
   #         cpus: '1.0'
 
   # ==========================================================================
-  # EXAMPLE: Mount additional host directories for Wazuh agent monitoring
-  # ==========================================================================
-  # wazuh-agent:
-  #   volumes:
-  #     - /custom/logs:/custom/logs:ro
-  #     - /opt/myapp/logs:/opt/myapp/logs:ro
-
-  # ==========================================================================
   # EXAMPLE: Add a VPN container for secure remote access
   # ==========================================================================
   # wireguard:

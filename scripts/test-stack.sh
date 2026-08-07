@@ -180,18 +180,18 @@ static_checks() {
 
     local siem_profile_count
     siem_profile_count=$(grep -c '^[[:space:]]*- siem$' "$PROJECT_DIR/docker-compose.yml" 2>/dev/null || true)
-    if [[ "$siem_profile_count" -ge 5 ]]; then
+    if [[ "$siem_profile_count" -ge 4 ]]; then
         pass "SIEM services are gated by the siem profile"
     else
-        fail "Expected at least five services in the siem profile; found $siem_profile_count" "grep -c -- '- siem' docker-compose.yml"
+        fail "Expected at least four services in the siem profile; found $siem_profile_count" "grep -c -- '- siem' docker-compose.yml"
     fi
 
     local stable_volume_count
     stable_volume_count=$(grep -c '^[[:space:]]*name: shog-' "$PROJECT_DIR/docker-compose.yml" 2>/dev/null || true)
-    if [[ "$stable_volume_count" -ge 24 ]]; then
+    if [[ "$stable_volume_count" -ge 23 ]]; then
         pass "Persistent volumes have stable backup-compatible names"
     else
-        fail "Expected 24 stable volume names; found $stable_volume_count" "grep -c 'name: shog-' docker-compose.yml"
+        fail "Expected 23 stable volume names; found $stable_volume_count" "grep -c 'name: shog-' docker-compose.yml"
     fi
 
     run_check "Script regression tests" bash "$PROJECT_DIR/tests/test-scripts.sh"

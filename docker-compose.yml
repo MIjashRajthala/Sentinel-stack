@@ -101,7 +101,8 @@ services:
   # ===========================================================================
   rsyslog:
     container_name: shog-rsyslog
-    image: rsyslog/syslog_appliance_alpine:8.2310.0
+    image: rsyslog/rsyslog:2026-04
+    user: "0:0"
     restart: unless-stopped
     networks:
       security:
@@ -367,42 +368,6 @@ services:
         condition: service_healthy
       wazuh-indexer:
         condition: service_healthy
-
-  # ===========================================================================
-  # WAZUH AGENT - Docker Host Telemetry
-  # ===========================================================================
-  wazuh-agent:
-    container_name: shog-wazuh-agent
-    image: wazuh/wazuh-agent:4.7.2
-    profiles:
-      - siem
-    restart: unless-stopped
-    networks:
-      security:
-        ipv4_address: ${WAZUH_AGENT_IP:-172.28.1.13}
-    environment:
-      - "WAZUH_MANAGER_HOST=wazuh-manager"
-      - "WAZUH_MANAGER_PORT=1514"
-      - "WAZUH_AGENT_GROUP=default"
-      - "WAZUH_AGENT_NAME=shog-docker-host"
-      - "WAZUH_REGISTRATION_PASSWORD=${WAZUH_API_PASSWORD}"
-    volumes:
-      - wazuh-agent-var-ossec:/var/ossec
-      - /:/host:ro
-      - /var/run/docker.sock:/var/run/docker.sock:ro
-    cap_add:
-      - AUDIT_CONTROL
-      - AUDIT_READ
-    security_opt:
-      - no-new-privileges:true
-    depends_on:
-      wazuh-manager:
-        condition: service_healthy
-    logging:
-      driver: "json-file"
-      options:
-        max-size: "10m"
-        max-file: "3"
 
   # ===========================================================================
   # PORTAINER CE - Container Management UI
@@ -884,10 +849,6 @@ volumes:
   wazuh-dashboard-data:
     name: shog-wazuh-dashboard-data
     driver: local
-  wazuh-agent-var-ossec:
-    name: shog-wazuh-agent-var-ossec
-    driver: local
-
   # Filebeat
   filebeat-data:
     name: shog-filebeat-data
