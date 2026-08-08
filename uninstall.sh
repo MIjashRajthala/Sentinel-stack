@@ -112,7 +112,7 @@ fi
 # ============================================================================
 echo ""
 echo -e "${BOLD}Stopping SHOG containers...${NC}"
-docker compose down --remove-orphans
+docker compose --profile "*" down --remove-orphans
 
 if [[ $? -eq 0 ]]; then
     echo -e "${GREEN}All containers stopped and removed.${NC}"
@@ -141,7 +141,6 @@ if [[ "$DELETE_VOLUMES" == true ]]; then
         "shog-wazuh-manager-var-ossec"
         "shog-wazuh-manager-etc"
         "shog-wazuh-dashboard-data"
-        "shog-wazuh-agent-var-ossec"
         "shog-filebeat-data"
         "shog-filebeat-logs"
         "shog-portainer-data"
@@ -173,13 +172,12 @@ if [[ "$DELETE_IMAGES" == true ]]; then
     IMAGES=(
         "mvance/unbound"
         "pihole/pihole"
-        "rsyslog/syslog_appliance_alpine"
+        "rsyslog/rsyslog"
         "crowdsecurity/crowdsec"
         "crowdsecurity/iptables-bouncer"
         "wazuh/wazuh-indexer"
         "wazuh/wazuh-manager"
         "wazuh/wazuh-dashboard"
-        "wazuh/wazuh-agent"
         "portainer/portainer-ce"
         "louislam/uptime-kuma"
         "docker.elastic.co/beats/filebeat-oss"

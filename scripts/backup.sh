@@ -128,12 +128,17 @@ if [[ "$BACKUP_VOLUMES" == true ]]; then
         "shog-rsyslog-spool:rsyslog-spool"
         "shog-crowdsec-config:crowdsec-config"
         "shog-crowdsec-data:crowdsec-data"
+        "shog-crowdsec-bouncer-data:crowdsec-bouncer-data"
+        "shog-crowdsec-bouncer-logs:crowdsec-bouncer-logs"
         "shog-wazuh-indexer-data:wazuh-indexer"
         "shog-wazuh-manager-var-ossec:wazuh-manager"
+        "shog-wazuh-manager-etc:wazuh-manager-etc"
         "shog-wazuh-dashboard-data:wazuh-dashboard"
-        "shog-wazuh-agent-var-ossec:wazuh-agent"
+        "shog-filebeat-data:filebeat-data"
+        "shog-filebeat-logs:filebeat-logs"
         "shog-portainer-data:portainer"
         "shog-uptime-kuma-data:uptime-kuma"
+        "shog-alerting-data:alerting"
     )
 
     # Optional: OpenCTI volumes if they exist
@@ -149,13 +154,13 @@ if [[ "$BACKUP_VOLUMES" == true ]]; then
     for vol_info in "${OPENCTI_VOLUMES[@]}"; do
         vol_name="${vol_info%%:*}"
         if docker volume inspect "$vol_name" &>/dev/null; then
-            V+=("$vol_info")
+            VOLUMES+=("$vol_info")
         fi
     done
 
     FAILED_VOLUMES=0
 
-    for vol_info in "${VOLUMES[@]}" "${V[@]+"${V[@]}"}"; do
+    for vol_info in "${VOLUMES[@]}"; do
         vol_name="${vol_info%%:*}"
         backup_label="${vol_info##*:}"
         backup_file="$BACKUP_DIR/${backup_label}-${TIMESTAMP}.tar.gz"
@@ -208,7 +213,7 @@ fi
     echo "Backup Type:  $([[ $BACKUP_VOLUMES == true ]] && echo volumes) $([[ $BACKUP_CONFIGS == true ]] && echo configs)"
     echo ""
     echo "Running Containers:"
-    docker compose ps --format "table {{.Name}}\t{{.State}}\t{{.Health}}" 2>/dev/null || true
+    docker compose --profile "*" ps --format "table {{.Name}}\t{{.State}}\t{{.Health}}" 2>/dev/null || true
     echo ""
     echo "Disk Usage:"
     df -h "$PROJECT_DIR" 2>/dev/null || true

@@ -265,11 +265,11 @@ sudo apt update && sudo apt install trivy
 
 # Scan all SHOG images
 trivy image mvance/unbound:1.19.0
-trivy image pihole/pihole:2024.02.2
+trivy image pihole/pihole:2026.05.0
 trivy image wazuh/wazuh-manager:4.7.2
-trivy image crowdsecurity/crowdsec:v1.6.0
-trivy image portainer/portainer-ce:2.19.4
-trivy image louislam/uptime-kuma:1.23.11
+trivy image crowdsecurity/crowdsec:v1.7.8
+trivy image portainer/portainer-ce:2.39.2
+trivy image louislam/uptime-kuma:2.3.2
 ```
 
 Schedule weekly scans:

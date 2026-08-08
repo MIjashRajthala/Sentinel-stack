@@ -1,3 +1,11 @@
 .DS_Store
 .*
 !.env.example
+!.github/
+!.github/workflows/
+!.github/workflows/*.yml
+
+# Runtime and test artifacts can contain host details. Diagnostic .env copies
+# are redacted, but the complete bundles still stay local or in CI artifacts.
+logs/
+backups/

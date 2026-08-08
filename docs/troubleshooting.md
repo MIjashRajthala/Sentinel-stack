@@ -4,13 +4,26 @@
 
 Run the health check first:
 ```bash
-./scripts/health-check.sh
+./scripts/health-check.sh --mode full --diagnose
 ```
 
 For continuous monitoring:
 ```bash
 ./scripts/health-check.sh --watch
 ```
+
+Run the repeatable test harness when the failure needs to be reproduced:
+
+```bash
+./scripts/test-stack.sh --mode lite --level static
+./scripts/test-stack.sh --mode full --level integration
+```
+
+Installer transcripts are saved under `logs/install/`. Failed tests are saved
+under `logs/test-runs/` with exact commands and a `diagnostics/next-steps.md`
+file. Diagnostic copies of `.env` redact password, token, key, and secret fields,
+and Compose config is captured without interpolation. Review raw service logs
+before sharing a bundle because applications can print sensitive data.
 
 ---
 
@@ -27,11 +40,18 @@ sudo sysctl --system
 
 **Problem**: Port 53 already in use (systemd-resolved)
 ```bash
-# Fix:
-sudo systemctl disable --now systemd-resolved
-sudo rm -f /etc/resolv.conf
-echo "nameserver 1.1.1.1" | sudo tee /etc/resolv.conf
+# Preferred fix: bind Pi-hole only to the host's stable LAN address.
+ip -4 route get 1.1.1.1
+sed -i 's/^PIHOLE_DNS_BIND_IP=.*/PIHOLE_DNS_BIND_IP=192.168.1.10/' .env
+./scripts/preflight-check.sh --mode lite
 ```
+
+Replace `192.168.1.10` with the address shown after `src`, and reserve that
+address in pfSense DHCP (or configure it statically). The installer and
+integration test do this detection automatically on first use. A listener on
+`127.0.0.53:53` can coexist with Pi-hole on a different, specific LAN address;
+there is normally no need to disable `systemd-resolved` or rewrite
+`/etc/resolv.conf`.
 
 **Problem**: Docker not installed or not running
 ```bash
@@ -112,18 +132,18 @@ docker logs shog-pihole --tail 50
 # 2. Test Unbound directly
 dig @127.0.0.1 -p 5335 google.com
 
-# 3. Check if port 53 is free on host
-sudo ss -tlnp | grep :53
+# 3. Check which addresses use port 53
+sudo ss -lntup '( sport = :53 )'
 
 # 4. Check Pi-hole config
 docker exec shog-pihole pihole status
 ```
 
 **Fixes**:
-- Ensure systemd-resolved is disabled (see above)
+- Ensure `PIHOLE_DNS_BIND_IP` is a stable LAN address not used by another listener
 - Restart Pi-hole: `docker restart shog-pihole`
 - Check if Unbound is healthy (Pi-hole depends on it)
-- Verify `PIHOLE_DNS_` in `.env` points to Unbound IP
+- Verify `FTLCONF_dns_upstreams` in the resolved Compose configuration points to the Unbound IP
 
 ### CrowdSec bouncer not working
 
@@ -274,7 +294,7 @@ docker exec shog-pihole ls -lh /etc/pihole/*.db
 
 **Fixes**:
 - Run log rotation: `docker system prune --volumes` (WARNING: removes unused volumes)
-- Reduce Pi-hole `FTLCONF_MAXDBDAYS` in `.env`
+- Reduce `PIHOLE_MAXDB_DAYS` in `.env` (mapped to Pi-hole v6 `FTLCONF_database_maxDBdays`)
 - Enable automated cleanup cron job
 
 ### Slow Wazuh Dashboard queries

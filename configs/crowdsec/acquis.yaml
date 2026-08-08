@@ -24,7 +24,7 @@ labels:
 # Reads container logs from Docker's JSON log files
 filenames:
   - /var/lib/docker/containers/*/*.log
-type: docker
+source: file
 labels:
   type: docker
   program: docker

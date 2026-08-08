@@ -1,0 +1,33 @@
+name: Static reliability tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  static:
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        mode: [lite, full]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run static test harness
+        run: ./scripts/test-stack.sh --mode "${{ matrix.mode }}" --level static
+
+      - name: Upload test artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: static-${{ matrix.mode }}-${{ github.run_id }}
+          path: logs/test-runs/
+          if-no-files-found: error
+          retention-days: 14
